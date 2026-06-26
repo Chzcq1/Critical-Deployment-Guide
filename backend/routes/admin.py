@@ -57,7 +57,8 @@ ADMIN_SESSION_ID = 0  # fixed placeholder — no Telegram ID needed
 
 @router.post("/admin/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
-    if body.passcode != settings.secret_key:
+    expected = settings.admin_passcode or settings.secret_key
+    if body.passcode != expected:
         raise HTTPException(status_code=403, detail="รหัสผ่านไม่ถูกต้อง")
 
     otp = generate_otp()
