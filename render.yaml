@@ -3,8 +3,7 @@ services:
     name: digital-product-store
     runtime: python
     buildCommand: >
-      pip install uv &&
-      uv pip install --system -r backend/requirements.txt &&
+      pip install -r backend/requirements.txt &&
       npm install -g pnpm &&
       pnpm install &&
       BASE_PATH=/ pnpm --filter @workspace/store run build
