@@ -16,7 +16,7 @@ export PATH="/tmp/pnpm-env/node_modules/.bin:$PATH"
 
 echo "--- Building React frontend ---"
 cd "$PROJECT_DIR"
-pnpm install
+pnpm install --no-frozen-lockfile
 BASE_PATH=/ pnpm --filter @workspace/store run build
 
 echo "--- Build complete ---"
