@@ -1,9 +1,9 @@
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import Order, Product
-from backend.schemas import OrderSubmit, OrderResponse
+from backend.schemas import OrderSubmit, OrderResponse, OrderStatusResponse
 from backend import bot as bot_module
 
 router = APIRouter()
@@ -37,6 +37,7 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
         payment_proof=payload.payment_proof,
         payment_type=payload.payment_type,
         status="pending",
+        link_sent=False,
     )
     db.add(order)
     db.commit()
@@ -49,5 +50,23 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
             db.commit()
     except Exception:
         pass
+
+    return order
+
+
+@router.get("/orders/{order_id}/status", response_model=OrderStatusResponse)
+def get_order_status(
+    order_id: int,
+    name: str = Query(..., description="Customer name used when placing the order"),
+    db: Session = Depends(get_db),
+):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="ไม่พบออเดอร์นี้")
+
+    submitted_name = (name or "").strip().lower()
+    stored_name = (order.telegram_first_name or "").strip().lower()
+    if submitted_name != stored_name:
+        raise HTTPException(status_code=403, detail="ชื่อไม่ตรงกับออเดอร์นี้")
 
     return order

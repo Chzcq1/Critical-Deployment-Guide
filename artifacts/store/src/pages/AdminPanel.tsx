@@ -27,6 +27,7 @@ interface Order {
   payment_type: string;
   payment_proof: string | null;
   status: string;
+  link_sent: boolean;
   created_at: string;
 }
 
@@ -333,7 +334,14 @@ function OrdersTab({ token }: { token: string }) {
                     <OrderProofViewer proof={o.payment_proof ?? null} type={o.payment_type} />
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={o.status} />
+                    <div className="flex flex-col gap-1">
+                      <StatusBadge status={o.status} />
+                      {o.status === "approved" && (
+                        <span className={`text-xs ${o.link_sent ? "text-green-400" : "text-yellow-400"}`}>
+                          {o.link_sent ? "✓ ส่งลิงก์แล้ว" : "⚠ ยังไม่ได้ส่งลิงก์"}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {o.created_at ? new Date(o.created_at).toLocaleDateString("th-TH") : "—"}

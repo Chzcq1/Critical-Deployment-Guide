@@ -64,6 +64,7 @@ class OrderResponse(BaseModel):
     payment_type: str
     payment_proof: Optional[str] = None
     status: str
+    link_sent: bool = False
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -81,6 +82,17 @@ class OTPVerify(BaseModel):
 class AdminToken(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class OrderStatusResponse(BaseModel):
+    id: int
+    product_name: str
+    payment_type: str
+    status: str
+    link_sent: bool
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
 
 
 class StoreSettingsUpdate(BaseModel):

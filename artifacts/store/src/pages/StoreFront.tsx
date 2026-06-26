@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
-import { ShoppingBag, X, Upload, Link, Clock, ChevronRight, Zap, Megaphone, AlertTriangle } from "lucide-react";
+import { motion } from "framer-motion";
+import { ShoppingBag, Upload, Link, Clock, ChevronRight, Zap, Megaphone, Search, CheckCircle, XCircle, Loader } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,15 @@ interface StoreSettings {
   hero_subtitle: string;
   announcement: string;
   store_name: string;
+}
+
+interface OrderStatus {
+  id: number;
+  product_name: string;
+  payment_type: string;
+  status: string;
+  link_sent: boolean;
+  created_at: string;
 }
 
 function useCountdown(productId: number) {
@@ -143,9 +152,11 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
 function BuyModal({
   product,
   onClose,
+  onSuccess,
 }: {
   product: Product | null;
   onClose: () => void;
+  onSuccess: (orderId: number, customerName: string) => void;
 }) {
   const [step, setStep] = useState<"info" | "payment">("info");
   const [customerName, setCustomerName] = useState("");
@@ -155,6 +166,7 @@ function BuyModal({
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [trueMoneyLink, setTrueMoneyLink] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [orderId, setOrderId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,7 +198,10 @@ function BuyModal({
       if (!res.ok) throw new Error("Failed to submit order");
       return res.json();
     },
-    onSuccess: () => setSubmitted(true),
+    onSuccess: (data) => {
+      setOrderId(data.id);
+      setSubmitted(true);
+    },
     onError: () => setError("ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"),
   });
 
@@ -194,42 +209,34 @@ function BuyModal({
     const file = e.target.files?.[0];
     if (!file) return;
     setSlipFile(file);
-    const url = URL.createObjectURL(file);
-    setSlipPreview(url);
+    setSlipPreview(URL.createObjectURL(file));
   };
 
   const handleNextStep = () => {
     setError("");
-    if (!customerName.trim()) {
-      setError("กรุณากรอกชื่อของคุณ");
-      return;
-    }
+    if (!customerName.trim()) { setError("กรุณากรอกชื่อของคุณ"); return; }
     setStep("payment");
   };
 
   const handleSubmit = () => {
     setError("");
-    if (paymentType === "slip" && !slipFile) {
-      setError("กรุณาแนบสลีปการโอนเงิน");
-      return;
-    }
-    if (paymentType === "truemoney" && !trueMoneyLink.trim()) {
-      setError("กรุณาวางลิงก์ซองทรูมันนี่");
-      return;
-    }
+    if (paymentType === "slip" && !slipFile) { setError("กรุณาแนบสลีปการโอนเงิน"); return; }
+    if (paymentType === "truemoney" && !trueMoneyLink.trim()) { setError("กรุณาวางลิงก์ซองทรูมันนี่"); return; }
     mutation.mutate();
   };
 
   const handleClose = () => {
-    setStep("info");
-    setCustomerName("");
-    setCustomerTelegram("");
-    setSlipFile(null);
-    setSlipPreview(null);
-    setTrueMoneyLink("");
-    setSubmitted(false);
-    setError("");
+    setStep("info"); setCustomerName(""); setCustomerTelegram("");
+    setSlipFile(null); setSlipPreview(null); setTrueMoneyLink("");
+    setSubmitted(false); setOrderId(null); setError("");
     onClose();
+  };
+
+  const handleCheckStatus = () => {
+    if (orderId !== null) {
+      handleClose();
+      onSuccess(orderId, customerName);
+    }
   };
 
   return (
@@ -239,7 +246,7 @@ function BuyModal({
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center gap-4 py-6 text-center"
+            className="flex flex-col items-center gap-4 py-4 text-center"
           >
             <div className="w-14 h-14 rounded-full bg-green-500/20 flex items-center justify-center">
               <span className="text-3xl">✅</span>
@@ -247,13 +254,24 @@ function BuyModal({
             <div>
               <h3 className="font-bold text-lg text-foreground">ส่งหลักฐานสำเร็จ!</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                แอดมินกำลังตรวจสอบ กรุณารอสักครู่<br />
-                แอดมินจะติดต่อกลับทาง Telegram ของคุณ
+                แอดมินกำลังตรวจสอบ กรุณารอสักครู่
               </p>
             </div>
-            <Button variant="outline" onClick={handleClose} className="w-full">
-              ปิด
-            </Button>
+            {orderId && (
+              <div className="w-full bg-muted/50 border border-border rounded-xl p-4 text-left">
+                <p className="text-xs text-muted-foreground mb-1">หมายเลขออเดอร์ของคุณ</p>
+                <p className="text-2xl font-bold font-mono text-primary">#{orderId}</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  📌 จดเลขนี้ไว้ใช้ตรวจสอบสถานะออเดอร์
+                </p>
+              </div>
+            )}
+            <div className="flex gap-2 w-full">
+              <Button variant="outline" onClick={handleClose} className="flex-1">ปิด</Button>
+              <Button onClick={handleCheckStatus} className="flex-1 bg-primary text-primary-foreground gap-1">
+                <Search size={14} /> ตรวจสอบสถานะ
+              </Button>
+            </div>
           </motion.div>
         ) : step === "info" ? (
           <>
@@ -263,12 +281,9 @@ function BuyModal({
                 ฿{product ? parseFloat(product.price).toLocaleString() : ""}
               </p>
             </DialogHeader>
-
             <div className="flex flex-col gap-3 mt-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  ชื่อ-นามสกุล *
-                </label>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อ-นามสกุล *</label>
                 <input
                   type="text"
                   placeholder="กรอกชื่อของคุณ"
@@ -278,9 +293,7 @@ function BuyModal({
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Telegram Username (สำหรับรับสินค้า)
-                </label>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Telegram Username (สำหรับรับสินค้า)</label>
                 <input
                   type="text"
                   placeholder="@username หรือ username ของคุณ"
@@ -288,19 +301,11 @@ function BuyModal({
                   onChange={(e) => setCustomerTelegram(e.target.value)}
                   className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                 />
-                <p className="text-xs text-muted-foreground">
-                  แอดมินจะส่งลิงก์เข้ากลุ่มให้ทาง Telegram
-                </p>
+                <p className="text-xs text-muted-foreground">แอดมินจะส่งลิงก์เข้ากลุ่มให้ทาง Telegram</p>
               </div>
-
               {error && <p className="text-red-400 text-sm">{error}</p>}
-
-              <Button
-                onClick={handleNextStep}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
-              >
-                ถัดไป — แนบหลักฐาน
-                <ChevronRight size={14} />
+              <Button onClick={handleNextStep} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
+                ถัดไป — แนบหลักฐาน <ChevronRight size={14} />
               </Button>
             </div>
           </>
@@ -312,17 +317,11 @@ function BuyModal({
                 {product?.name} — ฿{product ? parseFloat(product.price).toLocaleString() : ""}
               </p>
             </DialogHeader>
-
             <Tabs value={paymentType} onValueChange={(v) => setPaymentType(v as "slip" | "truemoney")}>
               <TabsList className="w-full bg-muted">
-                <TabsTrigger value="slip" className="flex-1 gap-2">
-                  <Upload size={14} /> สลีปโอนเงิน
-                </TabsTrigger>
-                <TabsTrigger value="truemoney" className="flex-1 gap-2">
-                  <Link size={14} /> TrueMoney
-                </TabsTrigger>
+                <TabsTrigger value="slip" className="flex-1 gap-2"><Upload size={14} /> สลีปโอนเงิน</TabsTrigger>
+                <TabsTrigger value="truemoney" className="flex-1 gap-2"><Link size={14} /> TrueMoney</TabsTrigger>
               </TabsList>
-
               <TabsContent value="slip" className="mt-4">
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -338,23 +337,13 @@ function BuyModal({
                     </div>
                   )}
                 </div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
+                <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} className="hidden" />
                 {slipPreview && (
-                  <button
-                    onClick={() => { setSlipFile(null); setSlipPreview(null); }}
-                    className="mt-2 text-xs text-muted-foreground hover:text-red-400 transition-colors"
-                  >
+                  <button onClick={() => { setSlipFile(null); setSlipPreview(null); }} className="mt-2 text-xs text-muted-foreground hover:text-red-400 transition-colors">
                     ✕ เปลี่ยนรูป
                   </button>
                 )}
               </TabsContent>
-
               <TabsContent value="truemoney" className="mt-4">
                 <div className="flex flex-col gap-2">
                   <input
@@ -364,28 +353,14 @@ function BuyModal({
                     onChange={(e) => setTrueMoneyLink(e.target.value)}
                     className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    วางลิงก์ซองทรูมันนี่ที่นี่
-                  </p>
+                  <p className="text-xs text-muted-foreground">วางลิงก์ซองทรูมันนี่ที่นี่</p>
                 </div>
               </TabsContent>
             </Tabs>
-
             {error && <p className="text-red-400 text-sm">{error}</p>}
-
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => { setStep("info"); setError(""); }}
-                className="flex-1"
-              >
-                ย้อนกลับ
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={mutation.isPending}
-                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
-              >
+              <Button variant="outline" onClick={() => { setStep("info"); setError(""); }} className="flex-1">ย้อนกลับ</Button>
+              <Button onClick={handleSubmit} disabled={mutation.isPending} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
                 {mutation.isPending ? "กำลังส่ง..." : "ส่งหลักฐาน"}
               </Button>
             </div>
@@ -396,8 +371,181 @@ function BuyModal({
   );
 }
 
+function OrderStatusModal({ open, initialOrderId, initialName, onClose }: {
+  open: boolean;
+  initialOrderId?: number | null;
+  initialName?: string;
+  onClose: () => void;
+}) {
+  const [orderId, setOrderId] = useState(initialOrderId ? String(initialOrderId) : "");
+  const [name, setName] = useState(initialName || "");
+  const [result, setResult] = useState<OrderStatus | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open && initialOrderId) {
+      setOrderId(String(initialOrderId));
+      setName(initialName || "");
+      setResult(null);
+      setError("");
+    }
+  }, [open, initialOrderId, initialName]);
+
+  const handleCheck = async () => {
+    setError(""); setResult(null);
+    if (!orderId.trim() || !name.trim()) { setError("กรุณากรอกข้อมูลให้ครบ"); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status?name=${encodeURIComponent(name.trim())}`);
+      if (res.status === 404) { setError("ไม่พบออเดอร์นี้ กรุณาตรวจสอบหมายเลขออเดอร์"); setLoading(false); return; }
+      if (res.status === 403) { setError("ชื่อไม่ตรงกับออเดอร์นี้ กรุณาตรวจสอบอีกครั้ง"); setLoading(false); return; }
+      if (!res.ok) { setError("เกิดข้อผิดพลาด กรุณาลองใหม่"); setLoading(false); return; }
+      const data = await res.json();
+      setResult(data);
+    } catch {
+      setError("เกิดข้อผิดพลาด กรุณาลองใหม่");
+    }
+    setLoading(false);
+  };
+
+  const statusConfig: Record<string, { icon: React.ReactNode; label: string; color: string; bg: string; desc: string }> = {
+    pending: {
+      icon: <Loader size={28} className="animate-spin text-yellow-400" />,
+      label: "รอการยืนยัน",
+      color: "text-yellow-400",
+      bg: "bg-yellow-500/10 border-yellow-500/30",
+      desc: "แอดมินกำลังตรวจสอบหลักฐานการชำระเงิน กรุณารอสักครู่",
+    },
+    approved: {
+      icon: <CheckCircle size={28} className="text-green-400" />,
+      label: "อนุมัติแล้ว",
+      color: "text-green-400",
+      bg: "bg-green-500/10 border-green-500/30",
+      desc: "",
+    },
+    rejected: {
+      icon: <XCircle size={28} className="text-red-400" />,
+      label: "ไม่ได้รับการอนุมัติ",
+      color: "text-red-400",
+      bg: "bg-red-500/10 border-red-500/30",
+      desc: "กรุณาติดต่อแอดมินหากคิดว่าเกิดข้อผิดพลาด",
+    },
+  };
+
+  const cfg = result ? (statusConfig[result.status] ?? statusConfig.pending) : null;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="bg-card border-border max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-foreground">
+            <Search size={18} className="text-primary" />
+            ตรวจสอบสถานะออเดอร์
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">หมายเลขออเดอร์</label>
+              <input
+                type="number"
+                placeholder="เช่น 42"
+                value={orderId}
+                onChange={(e) => { setOrderId(e.target.value); setResult(null); setError(""); }}
+                onKeyDown={(e) => e.key === "Enter" && handleCheck()}
+                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อที่ใช้สั่ง</label>
+              <input
+                type="text"
+                placeholder="ชื่อของคุณ"
+                value={name}
+                onChange={(e) => { setName(e.target.value); setResult(null); setError(""); }}
+                onKeyDown={(e) => e.key === "Enter" && handleCheck()}
+                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <Button onClick={handleCheck} disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-2">
+            {loading ? <><Loader size={14} className="animate-spin" /> กำลังตรวจสอบ...</> : <><Search size={14} /> ตรวจสอบสถานะ</>}
+          </Button>
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
+          {result && cfg && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`border rounded-xl p-4 flex flex-col gap-3 ${cfg.bg}`}
+            >
+              <div className="flex items-center gap-3">
+                {cfg.icon}
+                <div>
+                  <p className={`font-bold text-lg ${cfg.color}`}>{cfg.label}</p>
+                  <p className="text-xs text-muted-foreground">ออเดอร์ #{result.id} · {result.product_name}</p>
+                </div>
+              </div>
+
+              {result.status === "approved" && (
+                <div className="flex flex-col gap-2 pt-1 border-t border-border/50">
+                  {result.link_sent ? (
+                    <div className="flex items-start gap-2">
+                      <CheckCircle size={16} className="text-green-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm text-green-300 font-medium">บอทส่งลิงก์เข้ากลุ่มให้คุณแล้ว</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          ตรวจสอบกล่องข้อความ DM ของบอทใน Telegram
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <Loader size={16} className="text-yellow-400 shrink-0 mt-0.5 animate-spin" />
+                      <div>
+                        <p className="text-sm text-yellow-300 font-medium">กำลังดำเนินการส่งลิงก์</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          บอทจะส่งลิงก์เข้ากลุ่มไปยัง Telegram ของคุณ<br />
+                          หากรอนานกว่า 10 นาที กรุณาติดต่อแอดมิน
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {result.status === "rejected" && (
+                <p className="text-sm text-muted-foreground pt-1 border-t border-border/50">{cfg.desc}</p>
+              )}
+
+              {result.status === "pending" && (
+                <p className="text-sm text-muted-foreground pt-1 border-t border-border/50">{cfg.desc}</p>
+              )}
+
+              <p className="text-xs text-muted-foreground/60">
+                สั่งซื้อเมื่อ: {result.created_at ? new Date(result.created_at).toLocaleString("th-TH") : "—"}
+              </p>
+            </motion.div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function StoreFront() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [showOrderStatus, setShowOrderStatus] = useState(false);
+  const [checkOrderId, setCheckOrderId] = useState<number | null>(null);
+  const [checkName, setCheckName] = useState("");
 
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["products"],
@@ -414,6 +562,12 @@ export default function StoreFront() {
   const heroSubtitle = settings?.hero_subtitle || "รับสิทธิ์ทันทีผ่าน Telegram — ชำระเงิน รอยืนยัน รับลิงก์";
   const announcement = settings?.announcement || "";
 
+  const handleBuySuccess = (orderId: number, name: string) => {
+    setCheckOrderId(orderId);
+    setCheckName(name);
+    setShowOrderStatus(true);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b border-border">
@@ -422,6 +576,14 @@ export default function StoreFront() {
             <Zap size={18} className="text-primary" />
             <span className="font-bold text-foreground tracking-tight">{storeName}</span>
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setCheckOrderId(null); setCheckName(""); setShowOrderStatus(true); }}
+            className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+          >
+            <Search size={13} /> ตรวจสอบออเดอร์
+          </Button>
         </div>
       </header>
 
@@ -485,6 +647,13 @@ export default function StoreFront() {
       <BuyModal
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
+        onSuccess={handleBuySuccess}
+      />
+      <OrderStatusModal
+        open={showOrderStatus}
+        initialOrderId={checkOrderId}
+        initialName={checkName}
+        onClose={() => { setShowOrderStatus(false); setCheckOrderId(null); setCheckName(""); }}
       />
     </div>
   );

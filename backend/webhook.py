@@ -46,9 +46,9 @@ async def telegram_webhook(request: Request):
             if not order or order.status != "pending":
                 try:
                     if query.message.photo:
-                        await query.edit_message_caption(caption=(query.message.caption or "") + "\n\n⚠️ Order already processed.")
+                        await query.edit_message_caption(caption=(query.message.caption or "") + "\n\n⚠️ ดำเนินการไปแล้ว")
                     else:
-                        await query.edit_message_text(text=(query.message.text or "") + "\n\n⚠️ Order already processed.")
+                        await query.edit_message_text(text=(query.message.text or "") + "\n\n⚠️ ดำเนินการไปแล้ว")
                 except Exception:
                     pass
                 return {"ok": True}
@@ -60,9 +60,15 @@ async def telegram_webhook(request: Request):
                 db.commit()
 
                 group_ids = _get_group_ids(db, order.product_id) if order.product_id else ""
-                await bot_module.approve_order(order.id, order.telegram_user_id or 0, group_ids)
+                link_ok = await bot_module.approve_order(order.id, order.telegram_user_id or 0, group_ids)
+
+                if link_ok:
+                    order.link_sent = True
+                    db.commit()
 
                 suffix = f"\n\n✅ อนุมัติโดย {admin_name}"
+                if not link_ok:
+                    suffix += "\n⚠️ ส่งลิงก์ไม่ได้ (ลูกค้าไม่ได้ start บอท หรือไม่มี Telegram ID)"
                 try:
                     if query.message.photo:
                         await query.edit_message_caption(caption=(query.message.caption or "") + suffix)
