@@ -137,6 +137,22 @@ class StoreSettingsResponse(BaseModel):
     finance_admin_names: str
 
 
+class AdminLogCreate(BaseModel):
+    admin_name: str
+    action: str
+    details: Optional[str] = None
+
+
+class AdminLogResponse(BaseModel):
+    id: int
+    admin_name: str
+    action: str
+    details: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class FinanceEntryCreate(BaseModel):
     amount: Decimal
     description: str

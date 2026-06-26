@@ -87,3 +87,13 @@ class FinanceEntry(Base):
     entry_type = Column(String(50), nullable=False, default="income")
     order_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AdminLog(Base):
+    __tablename__ = "admin_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    admin_name = Column(String(100), nullable=False)
+    action = Column(String(100), nullable=False)
+    details = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

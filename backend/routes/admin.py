@@ -7,11 +7,12 @@ from typing import List, Optional, Dict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from backend.database import get_db
-from backend.models import Product, Order, OTPSession, StoreSettings, FinanceEntry
+from backend.models import Product, Order, OTPSession, StoreSettings, FinanceEntry, AdminLog
 from backend.schemas import (
     ProductCreate, ProductUpdate, ProductResponse,
     OrderResponse, OTPRequest, OTPVerify, AdminToken,
     StoreSettingsUpdate, StoreSettingsResponse,
+    AdminLogCreate, AdminLogResponse,
 )
 from backend.auth import generate_otp, create_admin_token, verify_admin_token
 from backend import bot as bot_module
@@ -278,3 +279,17 @@ def update_store_settings(body: StoreSettingsUpdate, db: Session = Depends(get_d
         _set_setting(db, key, value)
     db.commit()
     return _build_settings_response(db)
+
+
+@router.get("/admin/logs", response_model=List[AdminLogResponse])
+def get_admin_logs(limit: int = 50, db: Session = Depends(get_db), _: dict = Depends(get_admin)):
+    return db.query(AdminLog).order_by(AdminLog.id.desc()).limit(limit).all()
+
+
+@router.post("/admin/logs", response_model=AdminLogResponse, status_code=201)
+def create_admin_log(body: AdminLogCreate, db: Session = Depends(get_db), _: dict = Depends(get_admin)):
+    log = AdminLog(admin_name=body.admin_name, action=body.action, details=body.details)
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log

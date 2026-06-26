@@ -1,13 +1,36 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star, Wallet, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star, Wallet, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, Activity, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import AnnouncementsTab from "@/components/AnnouncementsTab";
+
+function useCountUp(target: number, duration = 900) {
+  const [val, setVal] = useState(0);
+  const fromRef = useRef(0);
+  const rafRef = useRef<number>();
+  useEffect(() => {
+    const from = fromRef.current;
+    const diff = target - from;
+    if (diff === 0) return;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min((now - t0) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setVal(from + diff * ease);
+      if (p < 1) rafRef.current = requestAnimationFrame(tick);
+      else fromRef.current = target;
+    };
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [target, duration]);
+  return val;
+}
 
 interface Product {
   id: number;
@@ -549,6 +572,7 @@ function ConfirmDialog({
   onCancel,
   confirmLabel = "ยืนยัน",
   variant = "danger",
+  children,
 }: {
   title: string;
   description?: string;
@@ -556,6 +580,7 @@ function ConfirmDialog({
   onCancel: () => void;
   confirmLabel?: string;
   variant?: "danger" | "default";
+  children?: React.ReactNode;
 }) {
   return (
     <Dialog open onOpenChange={onCancel}>
@@ -567,6 +592,7 @@ function ConfirmDialog({
           </div>
         </DialogHeader>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        {children}
         <div className="flex gap-2 mt-2">
           <Button variant="outline" onClick={onCancel} className="flex-1">ยกเลิก</Button>
           <Button
@@ -584,6 +610,7 @@ function ConfirmDialog({
 function OrdersTab({ token }: { token: string }) {
   const [setLinksOrder, setSetLinksOrder] = useState<Order | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [deleteAdmin, setDeleteAdmin] = useState<string>(() => localStorage.getItem("admin_current_name") || "");
   const qc = useQueryClient();
 
   const { data: orders = [], isLoading } = useQuery<Order[]>({
@@ -616,13 +643,20 @@ function OrdersTab({ token }: { token: string }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (orderId: number) =>
-      fetch(`/api/admin/orders/${orderId}`, { method: "DELETE", headers: authHeaders(token) }).then(async (r) => {
-        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "ลบไม่สำเร็จ"); }
-        return r.json();
-      }),
-    onSuccess: () => {
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/admin/orders/${orderId}`, { method: "DELETE", headers: authHeaders(token) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "ลบไม่สำเร็จ"); }
+      return r.json();
+    },
+    onSuccess: (_data, orderId) => {
       qc.invalidateQueries({ queryKey: ["admin-orders"] });
+      const who = deleteAdmin || localStorage.getItem("admin_current_name") || "แอดมิน";
+      fetch("/api/admin/logs", {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify({ admin_name: who, action: "delete_order", details: `ลบออเดอร์ #${orderId}` }),
+      }).catch(() => {});
+      qc.invalidateQueries({ queryKey: ["admin-logs"] });
       setDeleteConfirm(null);
     },
   });
@@ -637,8 +671,35 @@ function OrdersTab({ token }: { token: string }) {
           description={`ออเดอร์ #${deleteConfirm} จะถูกลบถาวร ไม่สามารถกู้คืนได้`}
           confirmLabel={deleteMutation.isPending ? "กำลังลบ..." : "ลบออเดอร์"}
           onConfirm={() => deleteMutation.mutate(deleteConfirm)}
-          onCancel={() => setDeleteConfirm(null)}
-        />
+          onCancel={() => { setDeleteConfirm(null); setDeleteAdmin(""); }}
+        >
+          {(() => {
+            const names = (localStorage.getItem("admin_finance_names") || "").split(",").map((s) => s.trim()).filter(Boolean);
+            if (names.length === 0) return (
+              <div className="mt-2 flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">ดำเนินการโดย (ไม่บังคับ)</label>
+                <input
+                  value={deleteAdmin}
+                  onChange={(e) => setDeleteAdmin(e.target.value)}
+                  placeholder="ชื่อแอดมิน"
+                  className="bg-muted border border-border rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
+              </div>
+            );
+            return (
+              <div className="mt-2 flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">ดำเนินการโดย</label>
+                <div className="flex gap-1 flex-wrap">
+                  {names.map((n) => (
+                    <button key={n} onClick={() => setDeleteAdmin(n)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${deleteAdmin === n ? "bg-red-600 border-red-600 text-white font-bold" : "border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                    >{n}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </ConfirmDialog>
       )}
       {setLinksOrder && (
         <SetLinksModal order={setLinksOrder} token={token} onClose={() => setSetLinksOrder(null)} />
@@ -1114,20 +1175,30 @@ interface FinanceSummary {
   monthly_goal: number;
 }
 
+interface AdminLog {
+  id: number;
+  admin_name: string;
+  action: string;
+  details: string | null;
+  created_at: string;
+}
+
 function AddEntryModal({
   token,
   onClose,
   defaultType = "income",
+  defaultAdminName = "",
 }: {
   token: string;
   onClose: () => void;
   defaultType?: "income" | "withdrawal";
+  defaultAdminName?: string;
 }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({
     amount: "",
     description: "",
-    admin_name: "",
+    admin_name: defaultAdminName || localStorage.getItem("admin_current_name") || "",
     entry_type: defaultType,
   });
   const [error, setError] = useState("");
@@ -1237,20 +1308,44 @@ function FinanceTab({ token }: { token: string }) {
   const [deleteEntryId, setDeleteEntryId] = useState<number | null>(null);
   const [goalInput, setGoalInput] = useState("");
   const [goalSaved, setGoalSaved] = useState(false);
+  const [currentAdmin, setCurrentAdmin] = useState<string>(() => localStorage.getItem("admin_current_name") || "");
 
-  const { data: summary, isLoading: summaryLoading } = useQuery<FinanceSummary>({
+  const { data: summary, isLoading: summaryLoading, refetch: refetchSummary } = useQuery<FinanceSummary>({
     queryKey: ["finance-summary"],
-    queryFn: () =>
-      fetch("/api/admin/finance/summary", { headers: authHeaders(token) }).then((r) => r.json()),
+    queryFn: () => fetch("/api/admin/finance/summary", { headers: authHeaders(token) }).then((r) => r.json()),
     refetchInterval: 60000,
   });
 
-  const { data: entries = [], isLoading: entriesLoading } = useQuery<FinanceEntry[]>({
+  const { data: entries = [], isLoading: entriesLoading, refetch: refetchEntries } = useQuery<FinanceEntry[]>({
     queryKey: ["finance-entries"],
-    queryFn: () =>
-      fetch("/api/admin/finance/entries", { headers: authHeaders(token) }).then((r) => r.json()),
+    queryFn: () => fetch("/api/admin/finance/entries", { headers: authHeaders(token) }).then((r) => r.json()),
     refetchInterval: 60000,
   });
+
+  const { data: logs = [], refetch: refetchLogs } = useQuery<AdminLog[]>({
+    queryKey: ["admin-logs"],
+    queryFn: () => fetch("/api/admin/logs", { headers: authHeaders(token) }).then((r) => r.json()),
+    refetchInterval: 60000,
+  });
+
+  const { data: settings } = useQuery<{ finance_admin_names: string }>({
+    queryKey: ["store-settings"],
+    queryFn: () => fetch("/api/store-settings").then((r) => r.json()),
+  });
+  const adminNames = (settings?.finance_admin_names || "").split(",").map((s) => s.trim()).filter(Boolean);
+
+  const handleSetAdmin = (name: string) => {
+    setCurrentAdmin(name);
+    localStorage.setItem("admin_current_name", name);
+    localStorage.setItem("admin_finance_names", settings?.finance_admin_names || "");
+  };
+
+  // Sync cached admin names to localStorage for OrdersTab
+  useEffect(() => {
+    if (settings?.finance_admin_names) {
+      localStorage.setItem("admin_finance_names", settings.finance_admin_names);
+    }
+  }, [settings?.finance_admin_names]);
 
   const deleteEntryMutation = useMutation({
     mutationFn: (id: number) =>
@@ -1281,14 +1376,33 @@ function FinanceTab({ token }: { token: string }) {
   const goalPct = monthlyGoal > 0 ? Math.min(100, (totalBalance / monthlyGoal) * 100) : 0;
   const adminBalances = summary?.admin_balances ?? {};
   const dailyChart = summary?.daily_chart ?? [];
-  const maxChart = Math.max(...dailyChart.map((d) => Math.abs(d.amount)), 1);
+
+  // Animated counters
+  const animBalance = useCountUp(totalBalance);
+  const animGoalPct = useCountUp(goalPct);
 
   const fmtMoney = (n: number) =>
     `฿${Math.abs(n).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const fmtAnimMoney = (n: number) =>
+    `฿${Math.round(Math.abs(n)).toLocaleString("th-TH")}`;
 
   const fmtDate = (s: string) => {
     const d = new Date(s);
     return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+  };
+
+  const handleRefresh = () => {
+    refetchSummary();
+    refetchEntries();
+    refetchLogs();
+  };
+
+  const ACTION_LABELS: Record<string, string> = {
+    delete_order: "🗑 ลบออเดอร์",
+    approve_order: "✅ อนุมัติออเดอร์",
+    reject_order: "❌ ปฏิเสธออเดอร์",
+    add_income: "💰 เพิ่มรายได้",
+    withdrawal: "💸 ถอนเงิน",
   };
 
   if (summaryLoading) {
@@ -1318,26 +1432,86 @@ function FinanceTab({ token }: { token: string }) {
           token={token}
           onClose={() => setShowAdd(false)}
           defaultType={addType}
+          defaultAdminName={currentAdmin}
         />
       )}
 
-      {/* Balance Card */}
-      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg, #1a2a5e 0%, #1e3a8a 60%, #1d4ed8 100%)" }}>
-        <p className="text-sm text-blue-200 mb-1">ยอดเงินรวม (Balance)</p>
-        <p className="text-4xl font-bold mb-3">{fmtMoney(totalBalance)}</p>
+      {/* Current Admin Picker */}
+      {adminNames.length > 0 && (
+        <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5">
+          <UserCheck size={13} className="text-muted-foreground shrink-0" />
+          <span className="text-xs text-muted-foreground">ดำเนินการในฐานะ:</span>
+          <div className="flex gap-1 flex-wrap flex-1">
+            {adminNames.map((name) => (
+              <button
+                key={name}
+                onClick={() => handleSetAdmin(name)}
+                className={`text-xs px-2.5 py-0.5 rounded-full border transition-all font-medium ${
+                  currentAdmin === name
+                    ? "bg-primary border-primary text-primary-foreground"
+                    : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
+                }`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          <button onClick={handleRefresh} className="ml-auto text-muted-foreground hover:text-foreground transition-colors shrink-0" title="รีเฟรช">
+            <RefreshCw size={13} />
+          </button>
+        </div>
+      )}
+
+      {adminNames.length === 0 && (
+        <div className="flex justify-end">
+          <button onClick={handleRefresh} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-muted/50">
+            <RefreshCw size={12} /> รีเฟรช
+          </button>
+        </div>
+      )}
+
+      {/* Balance Card — credit card style */}
+      <div
+        className="rounded-2xl p-5 text-white relative overflow-hidden shadow-xl"
+        style={{ background: "linear-gradient(135deg, #1a2a6e 0%, #1e3a8a 40%, #2563eb 100%)" }}
+      >
+        {/* Diagonal shine */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: "linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.18) 52%, rgba(255,255,255,0.08) 59%, transparent 74%)" }}
+        />
+        {/* Decorative circles */}
+        <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+        <div className="absolute -top-6 -right-6 w-28 h-28 rounded-full" style={{ background: "rgba(255,255,255,0.04)" }} />
+        {/* Chip */}
+        <div className="absolute top-4 right-5 w-9 h-7 rounded-md border border-yellow-300/40 flex flex-col justify-center items-center gap-0.5"
+          style={{ background: "linear-gradient(135deg, rgba(250,204,21,0.35), rgba(250,204,21,0.15))" }}>
+          <div className="w-6 h-0.5 rounded bg-yellow-300/50" />
+          <div className="w-6 h-0.5 rounded bg-yellow-300/50" />
+        </div>
+
+        <p className="text-[10px] text-blue-200/70 uppercase tracking-[0.15em] mb-0.5 relative">ยอดเงินรวม · Balance</p>
+        <p className="text-4xl font-bold mb-4 relative tabular-nums">
+          {totalBalance < 0 ? "-" : ""}{fmtAnimMoney(animBalance)}
+        </p>
+
         {monthlyGoal > 0 && (
-          <>
-            <div className="w-full bg-white/20 rounded-full h-2 mb-1">
+          <div className="relative">
+            <div className="w-full rounded-full h-1.5 mb-1.5" style={{ background: "rgba(255,255,255,0.15)" }}>
               <div
-                className="h-2 rounded-full bg-blue-300 transition-all"
-                style={{ width: `${goalPct}%` }}
+                className="h-1.5 rounded-full transition-none"
+                style={{
+                  width: `${animGoalPct}%`,
+                  background: "linear-gradient(90deg, #60a5fa, #a78bfa)",
+                  boxShadow: "0 0 8px rgba(96,165,250,0.6)",
+                }}
               />
             </div>
-            <div className="flex justify-between text-xs text-blue-200">
-              <span>ความคืบหน้า {goalPct.toFixed(1)}%</span>
-              <span>เป้าหมาย: {fmtMoney(monthlyGoal)}</span>
+            <div className="flex justify-between text-[11px] text-blue-200/70">
+              <span>ความคืบหน้า {animGoalPct.toFixed(1)}%</span>
+              <span>เป้าหมาย {fmtMoney(monthlyGoal)}</span>
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -1347,20 +1521,26 @@ function FinanceTab({ token }: { token: string }) {
           <div className="flex items-center gap-2 mb-3">
             <span className="text-sm font-semibold text-foreground">สัดส่วนแอดมิน</span>
           </div>
-          <div className="flex flex-col gap-2">
-            {Object.entries(adminBalances).map(([name, bal]) => (
-              <div key={name} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-                    {name.charAt(0).toUpperCase()}
+          <div className="flex flex-col gap-2.5">
+            {Object.entries(adminBalances).map(([name, bal]) => {
+              const animBal = bal;
+              return (
+                <div key={name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${currentAdmin === name ? "bg-primary text-primary-foreground ring-2 ring-primary/40" : "bg-primary/20 text-primary"}`}>
+                      {name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm text-foreground font-medium">{name}</p>
+                      {currentAdmin === name && <p className="text-[10px] text-primary/70">คุณกำลังใช้งาน</p>}
+                    </div>
                   </div>
-                  <span className="text-sm text-foreground">{name}</span>
+                  <span className={`font-bold text-sm tabular-nums ${animBal >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {animBal >= 0 ? "+" : ""}{fmtMoney(animBal)}
+                  </span>
                 </div>
-                <span className={`font-bold text-sm ${bal >= 0 ? "text-green-400" : "text-red-400"}`}>
-                  {bal >= 0 ? "+" : ""}{fmtMoney(bal)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1368,28 +1548,43 @@ function FinanceTab({ token }: { token: string }) {
       {/* Daily Chart */}
       {dailyChart.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-sm font-semibold text-foreground mb-3">สถิติ 7 วันย้อนหลัง</p>
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={dailyChart} barSize={28}>
+          <p className="text-sm font-semibold text-foreground mb-4">สถิติ 7 วันย้อนหลัง</p>
+          <ResponsiveContainer width="100%" height={150}>
+            <BarChart data={dailyChart} barSize={22} barCategoryGap="35%">
+              <defs>
+                <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.9} />
+                </linearGradient>
+                <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#f87171" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#b91c1c" stopOpacity={0.9} />
+                </linearGradient>
+              </defs>
               <XAxis
                 dataKey="date"
-                tick={{ fill: "#94a3b8", fontSize: 11 }}
+                tick={{ fill: "#64748b", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis hide />
               <Tooltip
-                contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, fontSize: 12 }}
-                labelStyle={{ color: "#94a3b8" }}
-                formatter={(v: number) => [`฿${Math.abs(v).toLocaleString()}`, "ยอด"]}
+                contentStyle={{
+                  background: "#0f172a",
+                  border: "1px solid #1e3a5f",
+                  borderRadius: 10,
+                  fontSize: 12,
+                  padding: "6px 10px",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+                }}
+                labelStyle={{ color: "#94a3b8", marginBottom: 2 }}
+                itemStyle={{ color: "#e2e8f0" }}
+                cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                formatter={(v: number) => [`฿${Math.abs(v).toLocaleString("th-TH")}`, "ยอด"]}
               />
-              <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="amount" radius={[6, 6, 2, 2]}>
                 {dailyChart.map((entry, idx) => (
-                  <Cell
-                    key={idx}
-                    fill={entry.amount >= 0 ? "#3b82f6" : "#ef4444"}
-                    fillOpacity={0.85}
-                  />
+                  <Cell key={idx} fill={entry.amount >= 0 ? "url(#incGrad)" : "url(#expGrad)"} />
                 ))}
               </Bar>
             </BarChart>
@@ -1401,13 +1596,13 @@ function FinanceTab({ token }: { token: string }) {
       <div className="flex gap-2">
         <Button
           onClick={() => { setAddType("income"); setShowAdd(true); }}
-          className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold gap-2"
+          className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold gap-2 shadow-lg shadow-green-900/30"
         >
           <TrendingUp size={15} /> เพิ่มรายได้
         </Button>
         <Button
           onClick={() => { setAddType("withdrawal"); setShowAdd(true); }}
-          className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold gap-2"
+          className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold gap-2 shadow-lg shadow-red-900/30"
         >
           <TrendingDown size={15} /> ถอนเงิน
         </Button>
@@ -1461,21 +1656,17 @@ function FinanceTab({ token }: { token: string }) {
               const isPos = amt >= 0;
               return (
                 <div key={entry.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isPos ? "bg-green-500/20" : "bg-red-500/20"}`}>
-                    {isPos ? (
-                      <TrendingUp size={14} className="text-green-400" />
-                    ) : (
-                      <TrendingDown size={14} className="text-red-400" />
-                    )}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isPos ? "bg-green-500/15" : "bg-red-500/15"}`}>
+                    {isPos ? <TrendingUp size={14} className="text-green-400" /> : <TrendingDown size={14} className="text-red-400" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground truncate">{entry.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {fmtDate(entry.created_at)} · {entry.admin_name}
-                      {entry.order_id && <span className="ml-1 text-muted-foreground/60">· ออเดอร์ #{entry.order_id}</span>}
+                      {fmtDate(entry.created_at)} · <span className="text-primary/70">{entry.admin_name}</span>
+                      {entry.order_id && <span className="ml-1 opacity-50">· ออเดอร์ #{entry.order_id}</span>}
                     </p>
                   </div>
-                  <span className={`font-bold text-sm shrink-0 ${isPos ? "text-green-400" : "text-red-400"}`}>
+                  <span className={`font-bold text-sm shrink-0 tabular-nums ${isPos ? "text-green-400" : "text-red-400"}`}>
                     {isPos ? "+" : ""}{fmtMoney(amt)}
                   </span>
                   <button
@@ -1487,6 +1678,34 @@ function FinanceTab({ token }: { token: string }) {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* Activity Log */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <Activity size={13} className="text-muted-foreground" />
+          <p className="text-sm font-semibold text-foreground flex-1">ประวัติกิจกรรม</p>
+          <span className="text-xs text-muted-foreground">{logs.length} รายการ</span>
+        </div>
+        {logs.length === 0 ? (
+          <div className="py-8 text-center text-muted-foreground text-xs">
+            ยังไม่มีกิจกรรม กิจกรรมจะถูกบันทึกเมื่อมีการลบออเดอร์
+          </div>
+        ) : (
+          <div className="divide-y divide-border max-h-64 overflow-y-auto">
+            {logs.map((log) => (
+              <div key={log.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-muted/10 transition-colors">
+                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                  <Activity size={11} className="text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-foreground">{ACTION_LABELS[log.action] ?? log.action}{log.details ? ` — ${log.details}` : ""}</p>
+                  <p className="text-[11px] text-muted-foreground">{fmtDate(log.created_at)} · <span className="text-primary/70">{log.admin_name}</span></p>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
