@@ -1,12 +1,16 @@
 import logging
+import os
 import httpx
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# slip2go.com — base URL (no subdomain)
-# Endpoint ref: https://slip2go.com/guide → verify-slip/qr-base64/info
-SLIP2GO_BASE = "https://slip2go.com"
+# Slip2Go API base — configurable via SLIP2GO_API_URL env var
+# Default: app.slip2go.com (the app subdomain hosts the API)
+# Full endpoint: POST {base}/api/verify-slip/qr-base64/info
+# Auth: Authorization: Bearer {SLIP2GO_API_KEY}
+# Body: {"image": "<raw_base64>"}
+SLIP2GO_BASE = os.environ.get("SLIP2GO_API_URL", "https://app.slip2go.com").rstrip("/")
 AMOUNT_TOLERANCE = 0.01
 
 
