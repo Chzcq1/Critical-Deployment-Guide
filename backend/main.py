@@ -31,6 +31,8 @@ def _run_migrations(engine):
         "ALTER TABLE orders ALTER COLUMN telegram_user_id DROP NOT NULL",
         # telegram_username must be nullable
         "ALTER TABLE orders ALTER COLUMN telegram_username DROP NOT NULL",
+        # invite_links stores JSON array of invite link URLs
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS invite_links TEXT",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

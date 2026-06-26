@@ -89,14 +89,11 @@ async def send_approval_request(
         return None
 
 
-async def approve_order(order_id: int, customer_id: int, group_ids_str: str) -> bool:
+async def generate_invite_links(order_id: int, group_ids_str: str) -> list[str]:
+    """สร้างลิงก์เชิญสำหรับกลุ่ม Telegram ทั้งหมด (ใช้ครั้งเดียว) — ไม่ต้องส่ง DM"""
     if not settings.bot_token:
-        logger.warning("Bot not configured — skipping customer DM")
-        return False
-
-    if not customer_id:
-        logger.warning(f"No Telegram user_id for order #{order_id} — cannot DM customer")
-        return False
+        logger.warning("Bot not configured — cannot create invite links")
+        return []
 
     from telegram.error import TelegramError
     bot = get_bot()
@@ -112,11 +109,27 @@ async def approve_order(order_id: int, customer_id: int, group_ids_str: str) -> 
                 name=f"Order #{order_id}",
             )
             invite_links.append(link.invite_link)
+            logger.info(f"Created invite link for order #{order_id}, group {group_id}")
         except TelegramError as e:
             logger.error(f"Failed to create invite link for group {group_id}: {e}")
 
+    return invite_links
+
+
+async def approve_order(order_id: int, customer_id: int, group_ids_str: str) -> bool:
+    """ส่งลิงก์เข้ากลุ่มให้ลูกค้าทาง DM (ใช้เมื่อมี telegram_user_id)"""
+    if not settings.bot_token:
+        return False
+    if not customer_id:
+        return False
+
+    from telegram.error import TelegramError
+    bot = get_bot()
+
+    invite_links = await generate_invite_links(order_id, group_ids_str)
+
     if invite_links:
-        links_text = "\n".join(f"{link}" for link in invite_links)
+        links_text = "\n".join(invite_links)
         message = (
             f"✅ ออเดอร์ #{order_id} ได้รับการอนุมัติแล้ว!\n\n"
             f"🔗 ลิงก์เข้ากลุ่ม (ใช้ได้ครั้งเดียว — ห้ามแชร์):\n\n{links_text}"

@@ -31,6 +31,7 @@ interface OrderStatus {
   payment_type: string;
   status: string;
   link_sent: boolean;
+  invite_links: string | null;
   created_at: string;
 }
 
@@ -241,10 +242,6 @@ function BuyModal({
     }
   };
 
-  const telegramDeepLink = orderId && botUsername
-    ? `https://t.me/${botUsername.replace(/^@/, "")}?start=order_${orderId}`
-    : null;
-
   return (
     <Dialog open={!!product} onOpenChange={handleClose}>
       <DialogContent className="bg-card border-border max-w-md">
@@ -260,45 +257,21 @@ function BuyModal({
             <div>
               <h3 className="font-bold text-lg text-foreground">ส่งหลักฐานสำเร็จ!</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                แอดมินกำลังตรวจสอบ — ลิงก์เข้ากลุ่มจะส่งทาง Telegram อัตโนมัติ
+                แอดมินกำลังตรวจสอบ รอสักครู่นะครับ
               </p>
             </div>
 
-            {/* Deep link CTA — ขั้นตอนเดียวที่ลูกค้าต้องทำ */}
-            {telegramDeepLink ? (
-              <a
-                href={telegramDeepLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full"
-              >
-                <div className="w-full bg-[#229ED9]/15 border-2 border-[#229ED9]/50 rounded-xl p-4 flex flex-col items-center gap-2 hover:border-[#229ED9] transition-colors cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <svg viewBox="0 0 24 24" className="w-6 h-6 fill-[#229ED9]">
-                      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.29 13.91l-2.957-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.855.649z" />
-                    </svg>
-                    <span className="font-bold text-[#229ED9]">กดเพื่อรับสินค้าทาง Telegram</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    กดปุ่มนี้เพื่อให้บอทรู้จัก Telegram ของคุณ → ลิงก์จะส่งอัตโนมัติหลังอนุมัติ
-                  </p>
-                  <div className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 rounded-lg px-3 py-1">
-                    <span>⚠️</span>
-                    <span>สำคัญ — ต้องกดก่อนแอดมินอนุมัติ</span>
-                  </div>
-                </div>
-              </a>
-            ) : (
-              <div className="w-full bg-muted/50 border border-border rounded-xl p-4">
-                <p className="text-xs text-muted-foreground mb-1">หมายเลขออเดอร์</p>
-                <p className="text-2xl font-bold font-mono text-primary">#{orderId}</p>
-                <p className="text-xs text-muted-foreground mt-2">แจ้งเลขนี้กับแอดมินเพื่อรับสินค้า</p>
-              </div>
-            )}
+            <div className="w-full bg-muted/50 border border-border rounded-xl p-4 text-left">
+              <p className="text-xs text-muted-foreground mb-1">หมายเลขออเดอร์ของคุณ</p>
+              <p className="text-2xl font-bold font-mono text-primary">#{orderId}</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                📌 บันทึกเลขนี้ไว้ — กด "ตรวจสอบสถานะ" เพื่อดูว่าอนุมัติหรือยัง และรับลิงก์เข้ากลุ่มได้เลย
+              </p>
+            </div>
 
             <div className="flex gap-2 w-full">
               <Button variant="outline" onClick={handleClose} className="flex-1 text-sm">ปิด</Button>
-              <Button onClick={handleCheckStatus} className="flex-1 bg-primary text-primary-foreground gap-1 text-sm">
+              <Button onClick={handleCheckStatus} className="flex-1 bg-primary text-primary-foreground gap-1 text-sm font-bold">
                 <Search size={13} /> ตรวจสอบสถานะ
               </Button>
             </div>
@@ -516,26 +489,48 @@ function OrderStatusModal({ open, initialOrderId, initialName, onClose }: {
               </div>
 
               {result.status === "approved" && (
-                <div className="flex flex-col gap-2 pt-1 border-t border-border/50">
-                  {result.link_sent ? (
-                    <div className="flex items-start gap-2">
-                      <CheckCircle size={16} className="text-green-400 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm text-green-300 font-medium">บอทส่งลิงก์เข้ากลุ่มให้คุณแล้ว</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          ตรวจสอบกล่องข้อความ DM ของบอทใน Telegram
-                        </p>
-                      </div>
-                    </div>
+                <div className="flex flex-col gap-3 pt-2 border-t border-border/50">
+                  {result.invite_links ? (
+                    (() => {
+                      let links: string[] = [];
+                      try { links = JSON.parse(result.invite_links); } catch { links = []; }
+                      return links.length > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-sm font-semibold text-green-300 flex items-center gap-1.5">
+                            <CheckCircle size={15} /> ลิงก์เข้ากลุ่มพร้อมแล้ว!
+                          </p>
+                          <p className="text-xs text-muted-foreground">กดลิงก์ด้านล่างเพื่อเข้ากลุ่ม (ใช้ได้ครั้งเดียว ห้ามแชร์)</p>
+                          {links.map((link, i) => (
+                            <a
+                              key={i}
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 bg-[#229ED9]/15 border border-[#229ED9]/40 hover:border-[#229ED9] rounded-lg px-4 py-3 transition-colors"
+                            >
+                              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#229ED9] shrink-0">
+                                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.29 13.91l-2.957-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.855.649z" />
+                              </svg>
+                              <span className="text-[#229ED9] font-medium text-sm">
+                                {links.length > 1 ? `เข้ากลุ่มที่ ${i + 1}` : "กดเพื่อเข้ากลุ่ม Telegram"}
+                              </span>
+                              <ChevronRight size={14} className="ml-auto text-[#229ED9]" />
+                            </a>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2">
+                          <Loader size={16} className="text-yellow-400 shrink-0 mt-0.5 animate-spin" />
+                          <p className="text-sm text-yellow-300">กำลังเตรียมลิงก์ กรุณาลองตรวจสอบใหม่อีกครั้ง</p>
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="flex items-start gap-2">
                       <Loader size={16} className="text-yellow-400 shrink-0 mt-0.5 animate-spin" />
                       <div>
-                        <p className="text-sm text-yellow-300 font-medium">กำลังดำเนินการส่งลิงก์</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          บอทจะส่งลิงก์เข้ากลุ่มไปยัง Telegram ของคุณ<br />
-                          หากรอนานกว่า 10 นาที กรุณาติดต่อแอดมิน
-                        </p>
+                        <p className="text-sm text-yellow-300 font-medium">กำลังเตรียมลิงก์เข้ากลุ่ม</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">ลองกดตรวจสอบใหม่สักครู่ หากรอนานกว่า 10 นาที ติดต่อแอดมิน</p>
                       </div>
                     </div>
                   )}

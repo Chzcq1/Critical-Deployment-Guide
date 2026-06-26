@@ -90,6 +90,7 @@ class OrderStatusResponse(BaseModel):
     payment_type: str
     status: str
     link_sent: bool
+    invite_links: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
