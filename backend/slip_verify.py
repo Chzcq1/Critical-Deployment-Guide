@@ -81,7 +81,7 @@ async def verify_slip(
                 headers={"Authorization": api_key, "Content-Type": "application/json"},
                 json={"payload": {"imageBase64": img_data}},
             )
-            logger.info(f"Slip2Go HTTP {resp.status_code}")
+            logger.info(f"Slip2Go HTTP {resp.status_code} | body_len={len(resp.text)}")
 
             # Guard against non-JSON or empty responses (e.g. 401, 403, 5xx HTML pages)
             raw_text = resp.text.strip()
