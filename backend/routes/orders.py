@@ -1,12 +1,13 @@
 import json
 import logging
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.database import get_db
-from backend.models import Order, Product, StoreSettings
+from backend.models import Order, Product, StoreSettings, FinanceEntry
 from backend.schemas import OrderSubmit, OrderResponse, OrderStatusResponse, OrderLinksUpdate
 from backend import bot as bot_module
-from backend.routes.admin import get_admin
+from backend.routes.admin import get_admin, _get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,64 @@ async def _send_to_admin(order_id: int, product_name: str, order: Order):
         payment_type=order.payment_type,
     )
     return message_id
+
+
+async def _run_auto_approve(order: Order, product: Product | None, db: Session, verify_result: dict) -> None:
+    """Run the full approve flow after successful auto-verification."""
+    order.status = "approved"
+    db.commit()
+
+    # Generate Telegram invite links
+    group_ids_str = (product.telegram_group_ids or "") if product else ""
+    if group_ids_str:
+        try:
+            invite_links = await bot_module.generate_invite_links(order.id, group_ids_str)
+            if invite_links:
+                order.invite_links = json.dumps(invite_links)
+                order.link_sent = True
+                db.commit()
+        except Exception as e:
+            logger.warning(f"invite link error for order #{order.id}: {e}")
+
+    # Increment sales count
+    if product:
+        product.sales_count = (product.sales_count or 0) + 1
+        db.commit()
+
+    # Finance entries
+    if product:
+        price = Decimal(str(product.price))
+        admin_names_str = _get_setting(db, "finance_admin_names")
+        admin_names = [n.strip() for n in admin_names_str.split(",") if n.strip()] if admin_names_str else ["แอดมิน"]
+        per_admin = price / len(admin_names)
+        for name in admin_names:
+            entry = FinanceEntry(
+                amount=per_admin,
+                description=f"ออเดอร์ #{order.id} — {product.name} [ยืนยันสลีปอัตโนมัติ]",
+                admin_name=name,
+                entry_type="order",
+                order_id=order.id,
+            )
+            db.add(entry)
+        db.commit()
+
+        # Notify admin group
+        try:
+            amount = verify_result.get("amount")
+            await bot_module.send_finance_notification(
+                action="✅ ยืนยันอัตโนมัติ (Slip2Go)",
+                description=(
+                    f"ออเดอร์ #{order.id} — {product.name}\n"
+                    f"ลูกค้า: {order.telegram_first_name or order.telegram_username or 'ไม่ระบุ'}\n"
+                    f"ยอด: {amount} บาท (API ยืนยันแล้ว)"
+                ),
+                amount=float(price),
+                admin_name=" / ".join(admin_names),
+            )
+        except Exception as e:
+            logger.warning(f"finance notify error: {e}")
+
+    logger.info(f"Order #{order.id} auto-approved via Slip2Go")
 
 
 @router.post("/orders", response_model=OrderResponse)
@@ -48,39 +107,65 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(order)
 
-    try:
-        message_id = await _send_to_admin(order.id, product.name, order)
-        if message_id:
-            order.admin_message_id = message_id
-            db.commit()
-    except Exception:
-        pass
+    # Determine mode
+    mode_row = db.query(StoreSettings).filter(StoreSettings.key == "slip_verify_mode").first()
+    mode = (mode_row.value if mode_row else None) or "off"
 
-    # Auto-verify slip if mode is "auto"
-    if payload.payment_type == "slip" and payload.payment_proof:
+    if payload.payment_type == "slip" and payload.payment_proof and mode == "auto":
+        # ── AUTO MODE: verify first, then decide ──────────────────────────────
         try:
-            mode_row = db.query(StoreSettings).filter(StoreSettings.key == "slip_verify_mode").first()
-            mode = (mode_row.value if mode_row else None) or "off"
-            if mode == "auto":
-                from backend.slip_verify import verify_slip
-                from backend.routes.admin import _get_setting
-                expected_amount = float(product.price) if product and product.price is not None else None
-                bank_account = _get_setting(db, "bank_account") or None
-                bank_code = _get_setting(db, "receiver_bank_code") or None
-                result = await verify_slip(
-                    payload.payment_proof,
-                    expected_amount=expected_amount,
-                    bank_account=bank_account,
-                    bank_code=bank_code,
-                )
-                order.slip_verify_status = result["status"]
-                order.slip_verify_result = json.dumps(result, ensure_ascii=False, default=str)
-                db.commit()
-                db.refresh(order)
-                logger.info(f"Auto-verified slip for order #{order.id}: {result['status']}")
-        except Exception as e:
-            logger.warning(f"Auto-verify failed for order #{order.id}: {e}")
+            from backend.slip_verify import verify_slip
+            expected_amount = float(product.price) if product.price is not None else None
+            bank_account = _get_setting(db, "bank_account") or None
+            bank_code = _get_setting(db, "receiver_bank_code") or None
 
+            result = await verify_slip(
+                payload.payment_proof,
+                expected_amount=expected_amount,
+                bank_account=bank_account,
+                bank_code=bank_code,
+            )
+            order.slip_verify_status = result["status"]
+            order.slip_verify_result = json.dumps(result, ensure_ascii=False, default=str)
+            db.commit()
+
+            if result["status"] == "verified":
+                # ✅ Slip OK → auto-approve, no Telegram manual review needed
+                await _run_auto_approve(order, product, db, result)
+            else:
+                # ❌ Slip failed → send to admin for manual review (with verify badge shown)
+                logger.info(f"Order #{order.id} verify failed ({result['status']}), sending to admin")
+                try:
+                    message_id = await _send_to_admin(order.id, product.name, order)
+                    if message_id:
+                        order.admin_message_id = message_id
+                        db.commit()
+                except Exception as e:
+                    logger.warning(f"send_to_admin error: {e}")
+
+        except Exception as e:
+            logger.warning(f"Auto-verify exception for order #{order.id}: {e}")
+            db.commit()
+            # Fall back to manual review
+            try:
+                message_id = await _send_to_admin(order.id, product.name, order)
+                if message_id:
+                    order.admin_message_id = message_id
+                    db.commit()
+            except Exception:
+                pass
+
+    else:
+        # ── MANUAL / OFF: always send to admin for review ─────────────────────
+        try:
+            message_id = await _send_to_admin(order.id, product.name, order)
+            if message_id:
+                order.admin_message_id = message_id
+                db.commit()
+        except Exception:
+            pass
+
+    db.refresh(order)
     return order
 
 

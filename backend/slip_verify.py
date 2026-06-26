@@ -4,7 +4,8 @@ from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-SLIP2GO_BASE = "https://api.slip2go.com"
+# Correct Slip2Go API base — app.slip2go.com NOT api.slip2go.com
+SLIP2GO_BASE = "https://app.slip2go.com"
 AMOUNT_TOLERANCE = 0.01
 
 
@@ -21,8 +22,8 @@ def _extract_bank(obj: dict | None) -> str | None:
     return bank.get("name") or bank.get("code")
 
 
-def _clean_account_no(account: str) -> str:
-    return account.replace("-", "").replace(" ", "").strip()
+def _clean_no(s: str) -> str:
+    return s.replace("-", "").replace(" ", "").strip()
 
 
 async def verify_slip(
@@ -32,38 +33,31 @@ async def verify_slip(
     bank_code: str | None = None,
 ) -> dict:
     """
-    Verify a Thai bank slip image using Slip2Go API (api.slip2go.com).
+    Verify a Thai bank slip image using Slip2Go API (app.slip2go.com).
+
+    Endpoint: POST /api/verify-slip/base64/info
+    Auth   : Authorization: <secret_key>  (no Bearer prefix)
+    Body   : { "payload": { "imageBase64": "<raw_base64_without_prefix>" } }
 
     Args:
         base64_image   : base64 string (with or without data URI prefix)
-        expected_amount: product price in THB — compared against slip amount
-        bank_account   : store's bank account number or PromptPay number
-        bank_code      : Slip2Go bank code (e.g. "01004" = KBank) or "promptpay"
+        expected_amount: product price — compared against slip amount
+        bank_account   : store's bank account / PromptPay number for receiver check
+        bank_code      : not used in API call; used for manual receiver hint only
 
-    Returns dict with:
-        success        : bool
-        status         : "verified" | "wrong_receiver" | "wrong_amount" |
-                         "duplicate" | "no_qr" | "failed" | "error" | "no_config"
-        error_message  : str | None
-        trans_ref      : str | None
-        date_time      : str | None
-        amount         : float | None   (actual amount on slip)
-        expected_amount: float | None   (product price)
-        amount_match   : bool | None
-        receiver_checked: bool          (True if checkReceiver was sent)
-        sender_name    : str | None
-        sender_bank    : str | None
-        receiver_name  : str | None
-        receiver_bank  : str | None
-        raw            : dict
+    Returns dict with: success, status, error_message, trans_ref, date_time,
+                       amount, expected_amount, amount_match,
+                       receiver_checked, receiver_match,
+                       sender_name, sender_bank,
+                       receiver_name, receiver_bank, raw
     """
     settings = get_settings()
     api_key = settings.slip2go_api_key
 
-    base_result = {
+    base_result: dict = {
         "trans_ref": None, "date_time": None, "amount": None,
         "expected_amount": expected_amount, "amount_match": None,
-        "receiver_checked": False,
+        "receiver_checked": False, "receiver_match": None,
         "sender_name": None, "sender_bank": None,
         "receiver_name": None, "receiver_bank": None,
         "raw": {},
@@ -71,28 +65,12 @@ async def verify_slip(
 
     if not api_key:
         return {**base_result, "success": False, "status": "no_config",
-                "error_message": "SLIP2GO_API_KEY ยังไม่ได้ตั้งค่า"}
+                "error_message": "SLIP2GO_API_KEY ยังไม่ได้ตั้งค่าใน Secrets"}
 
+    # Strip data URI prefix — Slip2Go expects raw base64
     img_data = base64_image
     if "," in img_data:
         img_data = img_data.split(",", 1)[1]
-
-    # Build checkCondition
-    check_condition: dict = {}
-    receiver_checked = False
-    if bank_account and bank_code:
-        clean_acc = _clean_account_no(bank_account)
-        if bank_code == "promptpay":
-            check_condition["checkReceiver"] = [{"promptPayNo": clean_acc}]
-        else:
-            check_condition["checkReceiver"] = [
-                {"accountType": bank_code, "accountNo": clean_acc}
-            ]
-        receiver_checked = True
-
-    payload: dict = {"imageBase64": img_data}
-    if check_condition:
-        payload["checkCondition"] = check_condition
 
     url = f"{SLIP2GO_BASE}/api/verify-slip/base64/info"
 
@@ -101,27 +79,51 @@ async def verify_slip(
             resp = await client.post(
                 url,
                 headers={"Authorization": api_key, "Content-Type": "application/json"},
-                json={"payload": payload},
+                json={"payload": {"imageBase64": img_data}},
             )
             data = resp.json()
     except Exception as e:
         logger.error(f"Slip2Go API error: {e}")
         return {**base_result, "success": False, "status": "error",
-                "error_message": f"เชื่อมต่อ Slip2Go ไม่ได้: {e}",
-                "receiver_checked": receiver_checked}
+                "error_message": f"เชื่อมต่อ Slip2Go ไม่ได้: {e}"}
 
     success = data.get("success", False)
     slip_data = data.get("data") or {}
 
-    slip_amount = slip_data.get("amount")
+    # Parse amount
+    raw_amount = slip_data.get("amount")
     try:
-        slip_amount = float(slip_amount) if slip_amount is not None else None
+        slip_amount: float | None = float(raw_amount) if raw_amount is not None else None
     except (TypeError, ValueError):
         slip_amount = None
 
+    # Amount comparison
     amount_match: bool | None = None
     if expected_amount is not None and slip_amount is not None:
         amount_match = abs(slip_amount - float(expected_amount)) <= AMOUNT_TOLERANCE
+
+    # Receiver info from response
+    receiver_obj = slip_data.get("receiver") or {}
+    receiver_name = _extract_name(receiver_obj)
+    receiver_bank = _extract_bank(receiver_obj)
+
+    # Manual receiver account matching (Slip2Go may mask the account, so best-effort)
+    receiver_match: bool | None = None
+    receiver_checked = bool(bank_account)
+    if bank_account and receiver_obj:
+        acct_obj = receiver_obj.get("account") or {}
+        acct_val = acct_obj.get("value") or ""
+        # Compare only the unmasked trailing digits
+        clean_conf = _clean_no(bank_account)
+        clean_resp = _clean_no(acct_val)
+        # Match if configured account ends with the unmasked digits (or full match)
+        if clean_resp and "x" not in clean_resp.lower():
+            receiver_match = clean_conf == clean_resp
+        elif clean_resp:
+            # Slip2Go masks middle digits: compare last 4 digits at minimum
+            digits_resp = clean_resp.replace("x", "").replace("X", "")
+            if len(digits_resp) >= 3:
+                receiver_match = clean_conf.endswith(digits_resp[-4:]) if len(digits_resp) >= 4 else None
 
     result = {
         **base_result,
@@ -132,17 +134,18 @@ async def verify_slip(
         "expected_amount": expected_amount,
         "amount_match": amount_match,
         "receiver_checked": receiver_checked,
+        "receiver_match": receiver_match,
         "sender_name": _extract_name(slip_data.get("sender")),
         "sender_bank": _extract_bank(slip_data.get("sender")),
-        "receiver_name": _extract_name(slip_data.get("receiver")),
-        "receiver_bank": _extract_bank(slip_data.get("receiver")),
+        "receiver_name": receiver_name,
+        "receiver_bank": receiver_bank,
     }
 
     if success:
         result.update({"success": True, "status": "verified", "error_message": None})
     else:
         code = str(data.get("code", ""))
-        msg = data.get("message") or data.get("error") or "ตรวจสอบไม่สำเร็จ"
+        msg = str(data.get("message") or data.get("error") or "ตรวจสอบไม่สำเร็จ")
         msg_lower = msg.lower()
         if "receiver" in msg_lower or "บัญชีผู้รับ" in msg or code in ("WRONG_RECEIVER", "1014"):
             status = "wrong_receiver"
@@ -155,8 +158,8 @@ async def verify_slip(
         result.update({"success": False, "status": status, "error_message": msg})
 
     logger.info(
-        f"Slip2Go verify: status={result['status']} slip_amount={slip_amount} "
+        f"Slip2Go verify: status={result['status']} amount={slip_amount} "
         f"expected={expected_amount} match={amount_match} "
-        f"receiver_checked={receiver_checked} transRef={result['trans_ref']}"
+        f"receiver_match={receiver_match} transRef={result['trans_ref']}"
     )
     return result

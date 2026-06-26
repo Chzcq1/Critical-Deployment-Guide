@@ -503,7 +503,7 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
   const transRef       = parsed.trans_ref as string | undefined;
   const errMsg         = parsed.error_message as string | undefined;
 
-  const hasDetail = amount !== undefined || senderName || rcvName || transRef || errMsg;
+  const hasDetail = (amount !== undefined && amount !== null) || senderName || rcvName || transRef || errMsg;
 
   const amountMatchBadge =
     amountMatch === true  ? <span className="ml-1 px-1 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 text-[9px]">✅ ยอดตรง</span> :
@@ -524,7 +524,7 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
       </div>
       {showDetail && hasDetail && (
         <div className="bg-muted/60 border border-border rounded-lg p-2 text-[10px] text-muted-foreground flex flex-col gap-0.5 min-w-[160px]">
-          {amount !== undefined && (
+          {amount !== undefined && amount !== null && (
             <p>
               💰 ยอดในสลีป: <span className={`font-medium ${amountMatch === false ? "text-red-400" : "text-foreground"}`}>{Number(amount).toLocaleString("th-TH")} บาท</span>
               {expectedAmount !== undefined && (
