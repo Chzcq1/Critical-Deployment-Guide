@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -141,12 +142,13 @@ def list_orders(db: Session = Depends(get_db), admin: dict = Depends(get_admin))
 
 
 def _build_settings_response(db: Session) -> StoreSettingsResponse:
+    bot_username = _get_setting(db, "bot_username") or os.environ.get("BOT_USERNAME", "")
     return StoreSettingsResponse(
         hero_title=_get_setting(db, "hero_title"),
         hero_subtitle=_get_setting(db, "hero_subtitle"),
         announcement=_get_setting(db, "announcement"),
         store_name=_get_setting(db, "store_name"),
-        bot_username=_get_setting(db, "bot_username"),
+        bot_username=bot_username,
         bank_name=_get_setting(db, "bank_name"),
         bank_account=_get_setting(db, "bank_account"),
         bank_qr_url=_get_setting(db, "bank_qr_url"),
