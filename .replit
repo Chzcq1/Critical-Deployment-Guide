@@ -43,3 +43,8 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["cargo", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc"]
+
+[userenv]
+
+[userenv.shared]
+SECRET_KEY = "8f354abf7373f075e6a141c605a6fcac5f74f8e68b305671d4d5f1b0dd122d81"
