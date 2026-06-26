@@ -27,6 +27,10 @@ def _run_migrations(engine):
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS telegram_first_name VARCHAR(255)",
         # payment_type added to orders
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) NOT NULL DEFAULT 'slip'",
+        # telegram_user_id must be nullable (Telegram login removed)
+        "ALTER TABLE orders ALTER COLUMN telegram_user_id DROP NOT NULL",
+        # telegram_username must be nullable
+        "ALTER TABLE orders ALTER COLUMN telegram_username DROP NOT NULL",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:
