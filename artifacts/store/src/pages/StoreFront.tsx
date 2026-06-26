@@ -22,6 +22,7 @@ interface StoreSettings {
   hero_subtitle: string;
   announcement: string;
   store_name: string;
+  bot_username: string;
 }
 
 interface OrderStatus {
@@ -151,16 +152,17 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
 
 function BuyModal({
   product,
+  botUsername,
   onClose,
   onSuccess,
 }: {
   product: Product | null;
+  botUsername: string;
   onClose: () => void;
   onSuccess: (orderId: number, customerName: string) => void;
 }) {
   const [step, setStep] = useState<"info" | "payment">("info");
   const [customerName, setCustomerName] = useState("");
-  const [customerTelegram, setCustomerTelegram] = useState("");
   const [paymentType, setPaymentType] = useState<"slip" | "truemoney">("slip");
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
@@ -188,7 +190,7 @@ function BuyModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           telegram_user_id: null,
-          telegram_username: customerTelegram.replace(/^@/, "") || null,
+          telegram_username: null,
           telegram_first_name: customerName,
           product_id: product.id,
           payment_proof: paymentProof,
@@ -226,7 +228,7 @@ function BuyModal({
   };
 
   const handleClose = () => {
-    setStep("info"); setCustomerName(""); setCustomerTelegram("");
+    setStep("info"); setCustomerName("");
     setSlipFile(null); setSlipPreview(null); setTrueMoneyLink("");
     setSubmitted(false); setOrderId(null); setError("");
     onClose();
@@ -238,6 +240,10 @@ function BuyModal({
       onSuccess(orderId, customerName);
     }
   };
+
+  const telegramDeepLink = orderId && botUsername
+    ? `https://t.me/${botUsername.replace(/^@/, "")}?start=order_${orderId}`
+    : null;
 
   return (
     <Dialog open={!!product} onOpenChange={handleClose}>
@@ -254,22 +260,46 @@ function BuyModal({
             <div>
               <h3 className="font-bold text-lg text-foreground">ส่งหลักฐานสำเร็จ!</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                แอดมินกำลังตรวจสอบ กรุณารอสักครู่
+                แอดมินกำลังตรวจสอบ — ลิงก์เข้ากลุ่มจะส่งทาง Telegram อัตโนมัติ
               </p>
             </div>
-            {orderId && (
-              <div className="w-full bg-muted/50 border border-border rounded-xl p-4 text-left">
-                <p className="text-xs text-muted-foreground mb-1">หมายเลขออเดอร์ของคุณ</p>
+
+            {/* Deep link CTA — ขั้นตอนเดียวที่ลูกค้าต้องทำ */}
+            {telegramDeepLink ? (
+              <a
+                href={telegramDeepLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full"
+              >
+                <div className="w-full bg-[#229ED9]/15 border-2 border-[#229ED9]/50 rounded-xl p-4 flex flex-col items-center gap-2 hover:border-[#229ED9] transition-colors cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" className="w-6 h-6 fill-[#229ED9]">
+                      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.29 13.91l-2.957-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.855.649z" />
+                    </svg>
+                    <span className="font-bold text-[#229ED9]">กดเพื่อรับสินค้าทาง Telegram</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    กดปุ่มนี้เพื่อให้บอทรู้จัก Telegram ของคุณ → ลิงก์จะส่งอัตโนมัติหลังอนุมัติ
+                  </p>
+                  <div className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 rounded-lg px-3 py-1">
+                    <span>⚠️</span>
+                    <span>สำคัญ — ต้องกดก่อนแอดมินอนุมัติ</span>
+                  </div>
+                </div>
+              </a>
+            ) : (
+              <div className="w-full bg-muted/50 border border-border rounded-xl p-4">
+                <p className="text-xs text-muted-foreground mb-1">หมายเลขออเดอร์</p>
                 <p className="text-2xl font-bold font-mono text-primary">#{orderId}</p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  📌 จดเลขนี้ไว้ใช้ตรวจสอบสถานะออเดอร์
-                </p>
+                <p className="text-xs text-muted-foreground mt-2">แจ้งเลขนี้กับแอดมินเพื่อรับสินค้า</p>
               </div>
             )}
+
             <div className="flex gap-2 w-full">
-              <Button variant="outline" onClick={handleClose} className="flex-1">ปิด</Button>
-              <Button onClick={handleCheckStatus} className="flex-1 bg-primary text-primary-foreground gap-1">
-                <Search size={14} /> ตรวจสอบสถานะ
+              <Button variant="outline" onClick={handleClose} className="flex-1 text-sm">ปิด</Button>
+              <Button onClick={handleCheckStatus} className="flex-1 bg-primary text-primary-foreground gap-1 text-sm">
+                <Search size={13} /> ตรวจสอบสถานะ
               </Button>
             </div>
           </motion.div>
@@ -289,19 +319,9 @@ function BuyModal({
                   placeholder="กรอกชื่อของคุณ"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleNextStep()}
                   className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                 />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Telegram Username (สำหรับรับสินค้า)</label>
-                <input
-                  type="text"
-                  placeholder="@username หรือ username ของคุณ"
-                  value={customerTelegram}
-                  onChange={(e) => setCustomerTelegram(e.target.value)}
-                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                />
-                <p className="text-xs text-muted-foreground">แอดมินจะส่งลิงก์เข้ากลุ่มให้ทาง Telegram</p>
               </div>
               {error && <p className="text-red-400 text-sm">{error}</p>}
               <Button onClick={handleNextStep} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
@@ -561,6 +581,7 @@ export default function StoreFront() {
   const heroTitle = settings?.hero_title || "สินค้าดิจิทัลพรีเมียม";
   const heroSubtitle = settings?.hero_subtitle || "รับสิทธิ์ทันทีผ่าน Telegram — ชำระเงิน รอยืนยัน รับลิงก์";
   const announcement = settings?.announcement || "";
+  const botUsername = settings?.bot_username || "";
 
   const handleBuySuccess = (orderId: number, name: string) => {
     setCheckOrderId(orderId);
@@ -646,6 +667,7 @@ export default function StoreFront() {
 
       <BuyModal
         product={selectedProduct}
+        botUsername={botUsername}
         onClose={() => setSelectedProduct(null)}
         onSuccess={handleBuySuccess}
       />

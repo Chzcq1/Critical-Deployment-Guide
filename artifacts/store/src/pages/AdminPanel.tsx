@@ -36,6 +36,7 @@ interface StoreSettings {
   hero_subtitle: string;
   announcement: string;
   store_name: string;
+  bot_username: string;
 }
 
 function authHeaders(token: string) {
@@ -370,6 +371,7 @@ function SettingsTab({ token }: { token: string }) {
     hero_title: "",
     hero_subtitle: "",
     announcement: "",
+    bot_username: "",
   });
 
   const [initialized, setInitialized] = useState(false);
@@ -404,6 +406,32 @@ function SettingsTab({ token }: { token: string }) {
       <div className="flex flex-col gap-1">
         <h2 className="font-semibold text-foreground">ตั้งค่าหน้าร้าน</h2>
         <p className="text-sm text-muted-foreground">แก้ไขข้อความที่แสดงบนหน้าหลักของร้าน</p>
+      </div>
+
+      {/* Telegram Bot Settings */}
+      <div className="flex flex-col gap-4 bg-card border border-[#229ED9]/30 rounded-xl p-5">
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 fill-[#229ED9]">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.29 13.91l-2.957-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.855.649z" />
+          </svg>
+          <h3 className="font-semibold text-foreground text-sm">ตั้งค่า Telegram Bot</h3>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bot Username</label>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground text-sm">@</span>
+            <input
+              type="text"
+              value={form.bot_username.replace(/^@/, "")}
+              onChange={(e) => setForm((f) => ({ ...f, bot_username: e.target.value.replace(/^@/, "") }))}
+              placeholder="YourBotUsername"
+              className="flex-1 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#229ED9]/60"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            ใส่ username บอท (ไม่ต้องมี @) — ใช้สร้างปุ่ม "รับสินค้าทาง Telegram" ให้ลูกค้ากดหลังสั่งซื้อ
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 bg-card border border-border rounded-xl p-5">

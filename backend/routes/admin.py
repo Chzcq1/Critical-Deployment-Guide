@@ -20,6 +20,7 @@ SETTING_DEFAULTS = {
     "hero_subtitle": "รับสิทธิ์ทันทีผ่าน Telegram — ชำระเงิน รอยืนยัน รับลิงก์",
     "announcement": "",
     "store_name": "DigitalStore",
+    "bot_username": "",
 }
 
 
@@ -130,25 +131,24 @@ def list_orders(db: Session = Depends(get_db), admin: dict = Depends(get_admin))
     return db.query(Order).order_by(Order.id.desc()).all()
 
 
-@router.get("/store-settings", response_model=StoreSettingsResponse)
-def get_store_settings(db: Session = Depends(get_db)):
+def _build_settings_response(db: Session) -> StoreSettingsResponse:
     return StoreSettingsResponse(
         hero_title=_get_setting(db, "hero_title"),
         hero_subtitle=_get_setting(db, "hero_subtitle"),
         announcement=_get_setting(db, "announcement"),
         store_name=_get_setting(db, "store_name"),
+        bot_username=_get_setting(db, "bot_username"),
     )
+
+
+@router.get("/store-settings", response_model=StoreSettingsResponse)
+def get_store_settings(db: Session = Depends(get_db)):
+    return _build_settings_response(db)
 
 
 @router.put("/admin/store-settings", response_model=StoreSettingsResponse)
 def update_store_settings(body: StoreSettingsUpdate, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
-    updates = body.model_dump(exclude_none=True)
-    for key, value in updates.items():
+    for key, value in body.model_dump(exclude_none=True).items():
         _set_setting(db, key, value)
     db.commit()
-    return StoreSettingsResponse(
-        hero_title=_get_setting(db, "hero_title"),
-        hero_subtitle=_get_setting(db, "hero_subtitle"),
-        announcement=_get_setting(db, "announcement"),
-        store_name=_get_setting(db, "store_name"),
-    )
+    return _build_settings_response(db)

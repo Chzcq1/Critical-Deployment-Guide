@@ -100,6 +100,7 @@ class StoreSettingsUpdate(BaseModel):
     hero_subtitle: Optional[str] = None
     announcement: Optional[str] = None
     store_name: Optional[str] = None
+    bot_username: Optional[str] = None
 
 
 class StoreSettingsResponse(BaseModel):
@@ -107,3 +108,4 @@ class StoreSettingsResponse(BaseModel):
     hero_subtitle: str
     announcement: str
     store_name: str
+    bot_username: str
