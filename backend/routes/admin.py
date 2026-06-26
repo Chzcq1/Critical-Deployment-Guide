@@ -13,6 +13,9 @@ from backend.schemas import (
 )
 from backend.auth import generate_otp, create_admin_token, verify_admin_token
 from backend import bot as bot_module
+from backend.config import get_settings
+
+settings = get_settings()
 
 router = APIRouter()
 
