@@ -2,13 +2,7 @@ services:
   - type: web
     name: digital-product-store
     runtime: python
-    buildCommand: >
-      pip install --upgrade pip &&
-      pip install -r requirements.txt &&
-      corepack enable &&
-      corepack prepare pnpm@latest --activate &&
-      pnpm install &&
-      BASE_PATH=/ pnpm --filter @workspace/store run build
+    buildCommand: bash build.sh
     startCommand: python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
