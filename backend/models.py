@@ -55,3 +55,16 @@ class StoreSettings(Base):
     key = Column(String(100), unique=True, nullable=False)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=True)
+    images = Column(Text, nullable=True)
+    font_size = Column(String(10), nullable=False, default="base")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useLocation } from "wouter";
 
 interface Product {
   id: number;
@@ -557,6 +558,7 @@ function OrderStatusModal({ open, initialOrderId, initialName, onClose }: {
 }
 
 export default function StoreFront() {
+  const [, setLocation] = useLocation();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showOrderStatus, setShowOrderStatus] = useState(false);
   const [checkOrderId, setCheckOrderId] = useState<number | null>(null);
@@ -587,29 +589,43 @@ export default function StoreFront() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b border-border">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Zap size={18} className="text-primary" />
             <span className="font-bold text-foreground tracking-tight">{storeName}</span>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => { setCheckOrderId(null); setCheckName(""); setShowOrderStatus(true); }}
-            className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
-          >
-            <Search size={13} /> ตรวจสอบออเดอร์
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setLocation("/announcements")}
+              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+            >
+              <Megaphone size={13} /> ประกาศ
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => { setCheckOrderId(null); setCheckName(""); setShowOrderStatus(true); }}
+              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+            >
+              <Search size={13} /> ตรวจสอบออเดอร์
+            </Button>
+          </div>
         </div>
       </header>
 
       {announcement && (
-        <div className="bg-yellow-500/10 border-b border-yellow-500/30">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-start gap-3">
-            <Megaphone size={16} className="text-yellow-400 shrink-0 mt-0.5" />
-            <p className="text-sm text-yellow-200 whitespace-pre-wrap leading-relaxed">{announcement}</p>
+        <button
+          onClick={() => setLocation("/announcements")}
+          className="w-full bg-yellow-500/10 border-b border-yellow-500/30 hover:bg-yellow-500/15 transition-colors text-left"
+        >
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+            <Megaphone size={16} className="text-yellow-400 shrink-0" />
+            <p className="text-sm text-yellow-200 line-clamp-1 flex-1">{announcement}</p>
+            <ChevronRight size={14} className="text-yellow-400/60 shrink-0" />
           </div>
-        </div>
+        </button>
       )}
 
       <div className="border-b border-border bg-gradient-to-b from-primary/5 to-transparent">

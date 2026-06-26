@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import AnnouncementsTab from "@/components/AnnouncementsTab";
 
 interface Product {
   id: number;
@@ -636,12 +637,15 @@ export default function AdminPanel() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         <Tabs defaultValue="products">
-          <TabsList className="bg-muted mb-6">
+          <TabsList className="bg-muted mb-6 flex-wrap h-auto gap-1">
             <TabsTrigger value="products" className="gap-2">
               <Package size={14} /> สินค้า
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-2">
               <ClipboardList size={14} /> ออเดอร์
+            </TabsTrigger>
+            <TabsTrigger value="announcements" className="gap-2">
+              <Megaphone size={14} /> ประกาศ
             </TabsTrigger>
             <TabsTrigger value="settings" className="gap-2">
               <Settings size={14} /> ตั้งค่าร้าน
@@ -652,6 +656,9 @@ export default function AdminPanel() {
           </TabsContent>
           <TabsContent value="orders">
             <OrdersTab token={token} />
+          </TabsContent>
+          <TabsContent value="announcements">
+            <AnnouncementsTab token={token} />
           </TabsContent>
           <TabsContent value="settings">
             <SettingsTab token={token} />

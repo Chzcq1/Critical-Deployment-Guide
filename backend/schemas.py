@@ -110,3 +110,32 @@ class StoreSettingsResponse(BaseModel):
     announcement: str
     store_name: str
     bot_username: str
+
+
+class AnnouncementCreate(BaseModel):
+    title: str
+    content: Optional[str] = None
+    images: Optional[str] = None
+    font_size: str = "base"
+    is_active: bool = True
+
+
+class AnnouncementUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    images: Optional[str] = None
+    font_size: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AnnouncementResponse(BaseModel):
+    id: int
+    title: str
+    content: Optional[str] = None
+    images: Optional[str] = None
+    font_size: str
+    is_active: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
