@@ -79,6 +79,8 @@ class OrderResponse(BaseModel):
     payment_proof: Optional[str] = None
     status: str
     link_sent: bool = False
+    slip_verify_status: Optional[str] = None
+    slip_verify_result: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -123,6 +125,7 @@ class StoreSettingsUpdate(BaseModel):
     bank_account: Optional[str] = None
     bank_qr_url: Optional[str] = None
     finance_admin_names: Optional[str] = None
+    slip_verify_mode: Optional[str] = None
 
 
 class StoreSettingsResponse(BaseModel):
@@ -135,6 +138,7 @@ class StoreSettingsResponse(BaseModel):
     bank_account: str
     bank_qr_url: str
     finance_admin_names: str
+    slip_verify_mode: str
 
 
 class AdminLogCreate(BaseModel):

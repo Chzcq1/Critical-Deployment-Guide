@@ -61,6 +61,8 @@ interface Order {
   status: string;
   link_sent: boolean;
   invite_links: string | null;
+  slip_verify_status: string | null;
+  slip_verify_result: string | null;
   created_at: string;
 }
 
@@ -74,6 +76,7 @@ interface StoreSettings {
   bank_account: string;
   bank_qr_url: string;
   finance_admin_names: string;
+  slip_verify_mode: string;
 }
 
 function authHeaders(token: string) {
@@ -471,7 +474,56 @@ function PaymentTypeBadge({ type }: { type: string }) {
   return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30">สลีป</span>;
 }
 
-function OrderProofViewer({ proof, type }: { proof: string | null; type: string }) {
+function SlipVerifyBadge({ status, result }: { status: string | null; result: string | null }) {
+  const [showDetail, setShowDetail] = useState(false);
+  if (!status) return null;
+
+  let parsed: Record<string, unknown> = {};
+  try { if (result) parsed = JSON.parse(result); } catch {}
+
+  const cfg: Record<string, { label: string; cls: string; icon: string }> = {
+    verified:   { label: "ยืนยันแล้ว",   cls: "bg-green-500/20 text-green-400 border-green-500/30",   icon: "✅" },
+    duplicate:  { label: "สลีปซ้ำ",       cls: "bg-orange-500/20 text-orange-400 border-orange-500/30", icon: "⚠️" },
+    no_qr:      { label: "อ่าน QR ไม่ได้", cls: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", icon: "📷" },
+    failed:     { label: "ตรวจไม่ผ่าน",   cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "❌" },
+    error:      { label: "เชื่อมต่อล้มเหลว",cls: "bg-red-500/20 text-red-400 border-red-500/30",        icon: "🔌" },
+    no_config:  { label: "ยังไม่ตั้งค่า API",cls: "bg-muted text-muted-foreground border-border",        icon: "⚙️" },
+  };
+  const c = cfg[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border", icon: "❓" };
+
+  const amount    = parsed.amount as number | undefined;
+  const senderName= parsed.sender_name as string | undefined;
+  const senderBank= parsed.sender_bank as string | undefined;
+  const rcvName   = parsed.receiver_name as string | undefined;
+  const rcvBank   = parsed.receiver_bank as string | undefined;
+  const transRef  = parsed.trans_ref as string | undefined;
+  const errMsg    = parsed.error_message as string | undefined;
+
+  const hasDetail = amount || senderName || rcvName || transRef || errMsg;
+
+  return (
+    <div className="flex flex-col gap-1 mt-1">
+      <button
+        onClick={() => hasDetail && setShowDetail((v) => !v)}
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${c.cls} ${hasDetail ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+      >
+        <span>{c.icon}</span> {c.label}
+        {hasDetail && <span className="ml-0.5 opacity-60">{showDetail ? "▲" : "▼"}</span>}
+      </button>
+      {showDetail && hasDetail && (
+        <div className="bg-muted/60 border border-border rounded-lg p-2 text-[10px] text-muted-foreground flex flex-col gap-0.5 min-w-[160px]">
+          {amount !== undefined && <p>💰 <span className="text-foreground font-medium">{Number(amount).toLocaleString("th-TH")} บาท</span></p>}
+          {senderName && <p>👤 ผู้โอน: <span className="text-foreground">{senderName}</span>{senderBank ? ` (${senderBank})` : ""}</p>}
+          {rcvName    && <p>🏦 ผู้รับ: <span className="text-foreground">{rcvName}</span>{rcvBank ? ` (${rcvBank})` : ""}</p>}
+          {transRef   && <p className="font-mono opacity-70">Ref: {transRef}</p>}
+          {errMsg && status !== "verified" && <p className="text-red-400">{errMsg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderProofViewer({ proof, type, verifyStatus, verifyResult }: { proof: string | null; type: string; verifyStatus: string | null; verifyResult: string | null }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col gap-1">
@@ -497,6 +549,7 @@ function OrderProofViewer({ proof, type }: { proof: string | null; type: string 
       ) : !proof ? (
         <span className="text-muted-foreground text-xs">—</span>
       ) : null}
+      {type === "slip" && <SlipVerifyBadge status={verifyStatus} result={verifyResult} />}
     </div>
   );
 }
@@ -661,6 +714,15 @@ function OrdersTab({ token }: { token: string }) {
     },
   });
 
+  const verifyMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      fetch(`/api/admin/orders/${orderId}/verify-slip`, { method: "POST", headers: authHeaders(token) }).then(async (r) => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "ตรวจสลีปไม่สำเร็จ"); }
+        return r.json();
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-orders"] }),
+  });
+
   const pendingCount = orders.filter((o) => o.status === "pending").length;
 
   return (
@@ -753,7 +815,7 @@ function OrdersTab({ token }: { token: string }) {
                     </td>
                     <td className="px-4 py-3 text-foreground">{o.product_name}</td>
                     <td className="px-4 py-3">
-                      <OrderProofViewer proof={o.payment_proof ?? null} type={o.payment_type} />
+                      <OrderProofViewer proof={o.payment_proof ?? null} type={o.payment_type} verifyStatus={o.slip_verify_status} verifyResult={o.slip_verify_result} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
@@ -770,30 +832,46 @@ function OrdersTab({ token }: { token: string }) {
                     </td>
                     <td className="px-4 py-3">
                       {o.status === "pending" ? (
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            size="sm"
-                            disabled={isActing}
-                            onClick={() => approveMutation.mutate(o.id)}
-                            className="text-xs h-7 px-2.5 gap-1 bg-green-600 hover:bg-green-500 text-white border-0"
-                          >
-                            {isActing && approveMutation.variables === o.id
-                              ? <Loader size={11} className="animate-spin" />
-                              : <CheckCircle size={11} />}
-                            อนุมัติ
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isActing}
-                            onClick={() => rejectMutation.mutate(o.id)}
-                            className="text-xs h-7 px-2.5 gap-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
-                          >
-                            {isActing && rejectMutation.variables === o.id
-                              ? <Loader size={11} className="animate-spin" />
-                              : <XCircle size={11} />}
-                            ปฏิเสธ
-                          </Button>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              size="sm"
+                              disabled={isActing}
+                              onClick={() => approveMutation.mutate(o.id)}
+                              className="text-xs h-7 px-2.5 gap-1 bg-green-600 hover:bg-green-500 text-white border-0"
+                            >
+                              {isActing && approveMutation.variables === o.id
+                                ? <Loader size={11} className="animate-spin" />
+                                : <CheckCircle size={11} />}
+                              อนุมัติ
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isActing}
+                              onClick={() => rejectMutation.mutate(o.id)}
+                              className="text-xs h-7 px-2.5 gap-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                            >
+                              {isActing && rejectMutation.variables === o.id
+                                ? <Loader size={11} className="animate-spin" />
+                                : <XCircle size={11} />}
+                              ปฏิเสธ
+                            </Button>
+                          </div>
+                          {o.payment_type === "slip" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={verifyMutation.isPending && verifyMutation.variables === o.id}
+                              onClick={() => verifyMutation.mutate(o.id)}
+                              className="text-xs h-7 px-2.5 gap-1 border-primary/40 text-primary hover:bg-primary/10 w-fit"
+                            >
+                              {verifyMutation.isPending && verifyMutation.variables === o.id
+                                ? <Loader size={11} className="animate-spin" />
+                                : <RefreshCw size={11} />}
+                              ตรวจสลีป
+                            </Button>
+                          )}
                         </div>
                       ) : o.status === "approved" ? (
                         <div className="flex items-center gap-1">
@@ -860,6 +938,7 @@ function SettingsTab({ token }: { token: string }) {
     bank_account: "",
     bank_qr_url: "",
     finance_admin_names: "",
+    slip_verify_mode: "off",
   });
 
   const [initialized, setInitialized] = useState(false);
@@ -1013,6 +1092,44 @@ function SettingsTab({ token }: { token: string }) {
           <p className="text-xs text-muted-foreground mt-0.5">
             ระบบจะแบ่งรายได้เท่ากันให้ทุกคนในรายการนี้ เมื่ออนุมัติออเดอร์ — ปล่อยว่างเพื่อไม่แบ่ง
           </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 bg-card border border-primary/20 rounded-xl p-5">
+        <div className="flex items-center gap-2">
+          <UserCheck size={15} className="text-primary" />
+          <h3 className="font-semibold text-foreground text-sm">ระบบตรวจสลีปอัตโนมัติ (SlipOK)</h3>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          ตรวจสอบสลีปธนาคารด้วย SlipOK API — แอดมินทุกคนจะเห็นผลตรวจสอบเหมือนกัน ต้องตั้งค่า <code className="bg-muted px-1 rounded">SLIPOK_API_KEY</code> และ <code className="bg-muted px-1 rounded">SLIPOK_BRANCH_ID</code> ใน Secrets ก่อน
+        </p>
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">โหมดตรวจสลีป</label>
+          <div className="flex gap-2">
+            {[
+              { value: "auto",   label: "🤖 อัตโนมัติ",  desc: "ตรวจทันทีเมื่อลูกค้าส่งสลีป" },
+              { value: "manual", label: "👆 แมนวล",       desc: "แอดมินกด 'ตรวจสลีป' เอง" },
+              { value: "off",    label: "⛔ ปิด",          desc: "ไม่ใช้ API (ตรวจสลีปเอง)" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setForm((f) => ({ ...f, slip_verify_mode: opt.value }))}
+                className={`flex flex-col items-start px-3 py-2 rounded-lg border text-left transition-colors flex-1 ${
+                  form.slip_verify_mode === opt.value
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                <span className="text-xs font-semibold">{opt.label}</span>
+                <span className="text-[10px] mt-0.5 opacity-70">{opt.desc}</span>
+              </button>
+            ))}
+          </div>
+          {form.slip_verify_mode !== "off" && (
+            <p className="text-xs text-primary/80 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
+              ✅ โหมด <strong>{form.slip_verify_mode === "auto" ? "อัตโนมัติ" : "แมนวล"}</strong> — ปุ่ม "ตรวจสลีป" จะปรากฏในหน้าออเดอร์ แอดมินทุกคนจะเห็นผลเหมือนกัน
+            </p>
+          )}
         </div>
       </div>
 

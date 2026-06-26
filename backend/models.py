@@ -40,6 +40,8 @@ class Order(Base):
     link_sent = Column(Boolean, default=False, nullable=False)
     invite_links = Column(Text, nullable=True)
     phone_number = Column(String(20), nullable=True)
+    slip_verify_status = Column(String(20), nullable=True)
+    slip_verify_result = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

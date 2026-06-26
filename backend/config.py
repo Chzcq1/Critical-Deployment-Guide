@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="changeme-please-set-a-real-secret-key-32chars")
     admin_passcode: Optional[str] = Field(default=None)
     admin_telegram_ids: Optional[str] = Field(default=None)
+    slipok_api_key: Optional[str] = Field(default=None)
+    slipok_branch_id: Optional[str] = Field(default=None)
 
     class Config:
         env_file = ".env"

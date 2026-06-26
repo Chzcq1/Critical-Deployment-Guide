@@ -51,6 +51,9 @@ def _run_migrations(engine):
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS sales_count INTEGER NOT NULL DEFAULT 0",
         # finance_entries table columns (created via create_all, these guard extras)
         "ALTER TABLE finance_entries ADD COLUMN IF NOT EXISTS order_id INTEGER",
+        # slip verify columns
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS slip_verify_status VARCHAR(20)",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS slip_verify_result TEXT",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

@@ -33,6 +33,7 @@ SETTING_DEFAULTS = {
     "bank_qr_url": "",
     "finance_admin_names": "",
     "finance_monthly_goal": "0",
+    "slip_verify_mode": "off",
 }
 
 
@@ -239,6 +240,26 @@ async def admin_approve_order(order_id: int, db: Session = Depends(get_db), admi
     return order
 
 
+@router.post("/admin/orders/{order_id}/verify-slip", response_model=OrderResponse)
+async def admin_verify_slip(order_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    """Manually (re-)verify a bank slip for an order using SlipOK API."""
+    import json as _json
+    from backend.slip_verify import verify_slip
+
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.payment_type != "slip" or not order.payment_proof:
+        raise HTTPException(status_code=400, detail="ออเดอร์นี้ไม่มีสลีปให้ตรวจ")
+
+    result = await verify_slip(order.payment_proof)
+    order.slip_verify_status = result["status"]
+    order.slip_verify_result = _json.dumps(result, ensure_ascii=False, default=str)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 @router.post("/admin/orders/{order_id}/reject", response_model=OrderResponse)
 def admin_reject_order(order_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
     order = db.query(Order).filter(Order.id == order_id).first()
@@ -265,6 +286,7 @@ def _build_settings_response(db: Session) -> StoreSettingsResponse:
         bank_account=_get_setting(db, "bank_account"),
         bank_qr_url=_get_setting(db, "bank_qr_url"),
         finance_admin_names=_get_setting(db, "finance_admin_names"),
+        slip_verify_mode=_get_setting(db, "slip_verify_mode") or "off",
     )
 
 

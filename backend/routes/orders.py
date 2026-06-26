@@ -1,11 +1,14 @@
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.database import get_db
-from backend.models import Order, Product
+from backend.models import Order, Product, StoreSettings
 from backend.schemas import OrderSubmit, OrderResponse, OrderStatusResponse, OrderLinksUpdate
 from backend import bot as bot_module
 from backend.routes.admin import get_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -52,6 +55,22 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
             db.commit()
     except Exception:
         pass
+
+    # Auto-verify slip if mode is "auto"
+    if payload.payment_type == "slip" and payload.payment_proof:
+        try:
+            mode_row = db.query(StoreSettings).filter(StoreSettings.key == "slip_verify_mode").first()
+            mode = (mode_row.value if mode_row else None) or "off"
+            if mode == "auto":
+                from backend.slip_verify import verify_slip
+                result = await verify_slip(payload.payment_proof)
+                order.slip_verify_status = result["status"]
+                order.slip_verify_result = json.dumps(result, ensure_ascii=False, default=str)
+                db.commit()
+                db.refresh(order)
+                logger.info(f"Auto-verified slip for order #{order.id}: {result['status']}")
+        except Exception as e:
+            logger.warning(f"Auto-verify failed for order #{order.id}: {e}")
 
     return order
 
