@@ -476,66 +476,137 @@ function PaymentTypeBadge({ type }: { type: string }) {
 }
 
 function SlipVerifyBadge({ status, result }: { status: string | null; result: string | null }) {
-  const [showDetail, setShowDetail] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   if (!status) return null;
 
   let parsed: Record<string, unknown> = {};
   try { if (result) parsed = JSON.parse(result); } catch {}
 
-  const cfg: Record<string, { label: string; cls: string; icon: string }> = {
-    verified:        { label: "ยืนยันแล้ว",      cls: "bg-green-500/20 text-green-400 border-green-500/30",   icon: "✅" },
-    wrong_receiver:  { label: "บัญชีไม่ตรง",     cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "🏦" },
-    duplicate:       { label: "สลีปซ้ำ",          cls: "bg-orange-500/20 text-orange-400 border-orange-500/30", icon: "⚠️" },
-    no_qr:           { label: "อ่าน QR ไม่ได้",   cls: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", icon: "📷" },
-    failed:          { label: "ตรวจไม่ผ่าน",      cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "❌" },
-    error:           { label: "เชื่อมต่อล้มเหลว", cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "🔌" },
-    no_config:       { label: "ยังไม่ตั้งค่า API", cls: "bg-muted text-muted-foreground border-border",         icon: "⚙️" },
+  const cfg: Record<string, { label: string; pill: string; bar: string; icon: string }> = {
+    verified:       { label: "ยืนยันสลีปแล้ว",    pill: "bg-green-500/15 text-green-400 border-green-500/30",   bar: "border-l-green-500",   icon: "✅" },
+    wrong_receiver: { label: "บัญชีผู้รับไม่ตรง",  pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500",     icon: "🏦" },
+    duplicate:      { label: "สลีปซ้ำ",             pill: "bg-orange-500/15 text-orange-400 border-orange-500/30",bar: "border-l-orange-500",  icon: "⚠️" },
+    no_qr:          { label: "อ่าน QR ไม่ได้",      pill: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",bar: "border-l-yellow-500",  icon: "📷" },
+    failed:         { label: "ตรวจไม่ผ่าน",         pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500",     icon: "❌" },
+    error:          { label: "เชื่อมต่อล้มเหลว",    pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500",     icon: "🔌" },
+    no_config:      { label: "ยังไม่ตั้งค่า API",   pill: "bg-muted text-muted-foreground border-border",         bar: "border-l-border",      icon: "⚙️" },
   };
-  const c = cfg[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border", icon: "❓" };
+  const c = cfg[status] ?? { label: status, pill: "bg-muted text-muted-foreground border-border", bar: "border-l-border", icon: "❓" };
 
-  const amount         = parsed.amount as number | undefined;
-  const expectedAmount = parsed.expected_amount as number | undefined;
-  const amountMatch    = parsed.amount_match as boolean | null | undefined;
-  const senderName     = parsed.sender_name as string | undefined;
-  const senderBank     = parsed.sender_bank as string | undefined;
-  const rcvName        = parsed.receiver_name as string | undefined;
-  const rcvBank        = parsed.receiver_bank as string | undefined;
-  const transRef       = parsed.trans_ref as string | undefined;
-  const errMsg         = parsed.error_message as string | undefined;
+  const amount         = parsed.amount        as number  | null | undefined;
+  const expectedAmount = parsed.expected_amount as number | null | undefined;
+  const amountMatch    = parsed.amount_match  as boolean | null | undefined;
+  const senderName     = parsed.sender_name   as string  | undefined;
+  const senderBank     = parsed.sender_bank   as string  | undefined;
+  const rcvName        = parsed.receiver_name as string  | undefined;
+  const rcvBank        = parsed.receiver_bank as string  | undefined;
+  const transRef       = parsed.trans_ref     as string  | undefined;
+  const dateTime       = parsed.date_time     as string  | undefined;
+  const rcvChecked     = parsed.receiver_checked as boolean | undefined;
+  const rcvMatch       = parsed.receiver_match   as boolean | null | undefined;
+  const errMsg         = parsed.error_message as string  | undefined;
 
-  const hasDetail = (amount !== undefined && amount !== null) || senderName || rcvName || transRef || errMsg;
+  const hasDetail = amount != null || senderName || rcvName || transRef || errMsg || dateTime;
 
-  const amountMatchBadge =
-    amountMatch === true  ? <span className="ml-1 px-1 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 text-[9px]">✅ ยอดตรง</span> :
-    amountMatch === false ? <span className="ml-1 px-1 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 text-[9px]">❌ ยอดไม่ตรง</span> :
-    null;
+  const fmtDate = (s: string) => {
+    try { return new Date(s).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }); }
+    catch { return s; }
+  };
 
   return (
-    <div className="flex flex-col gap-1 mt-1">
-      <div className="flex items-center flex-wrap gap-1">
-        <button
-          onClick={() => hasDetail && setShowDetail((v) => !v)}
-          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${c.cls} ${hasDetail ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
-        >
-          <span>{c.icon}</span> {c.label}
-          {hasDetail && <span className="ml-0.5 opacity-60">{showDetail ? "▲" : "▼"}</span>}
-        </button>
-        {amountMatchBadge}
-      </div>
-      {showDetail && hasDetail && (
-        <div className="bg-muted/60 border border-border rounded-lg p-2 text-[10px] text-muted-foreground flex flex-col gap-0.5 min-w-[160px]">
-          {amount !== undefined && amount !== null && (
-            <p>
-              💰 ยอดในสลีป: <span className={`font-medium ${amountMatch === false ? "text-red-400" : "text-foreground"}`}>{Number(amount).toLocaleString("th-TH")} บาท</span>
-              {expectedAmount !== undefined && (
-                <span className="opacity-60"> (ราคาสินค้า {Number(expectedAmount).toLocaleString("th-TH")} บาท)</span>
-              )}
-            </p>
+    <div className="mt-1.5 flex flex-col gap-1">
+      {/* ── status pill + toggle ── */}
+      <button
+        onClick={() => hasDetail && setExpanded(v => !v)}
+        className={`inline-flex items-center gap-1.5 self-start px-2 py-0.5 rounded-full text-xs font-semibold border ${c.pill} ${hasDetail ? "cursor-pointer hover:opacity-80 transition-opacity" : "cursor-default"}`}
+      >
+        {c.icon} {c.label}
+        {hasDetail && <span className="opacity-50 text-[9px]">{expanded ? "▲" : "▼"}</span>}
+      </button>
+
+      {/* ── always-visible quick row (when verified) ── */}
+      {status === "verified" && amount != null && (
+        <div className="flex flex-wrap gap-1.5 text-[11px]">
+          <span className={`px-1.5 py-0.5 rounded border font-medium ${amountMatch === false ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-green-500/10 text-green-400 border-green-500/30"}`}>
+            💰 {Number(amount).toLocaleString("th-TH")} บาท{amountMatch === false ? " ⚠️ ยอดไม่ตรง" : amountMatch === true ? " ✓" : ""}
+          </span>
+          {senderName && (
+            <span className="px-1.5 py-0.5 rounded border bg-muted text-foreground border-border">
+              👤 {senderName}{senderBank ? ` · ${senderBank}` : ""}
+            </span>
           )}
-          {senderName && <p>👤 ผู้โอน: <span className="text-foreground">{senderName}</span>{senderBank ? ` (${senderBank})` : ""}</p>}
-          {rcvName    && <p>🏦 ผู้รับ: <span className="text-foreground">{rcvName}</span>{rcvBank ? ` (${rcvBank})` : ""}</p>}
-          {transRef   && <p className="font-mono opacity-70">Ref: {transRef}</p>}
-          {errMsg && status !== "verified" && <p className="text-red-400">{errMsg}</p>}
+        </div>
+      )}
+
+      {/* ── amount mismatch pill on non-verified ── */}
+      {status !== "verified" && amountMatch === false && (
+        <span className="self-start text-[11px] px-1.5 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/30">❌ ยอดไม่ตรง</span>
+      )}
+
+      {/* ── expandable detail card ── */}
+      {expanded && hasDetail && (
+        <div className={`border-l-4 ${c.bar} bg-muted/50 border border-border rounded-r-lg pl-3 pr-3 py-2.5 text-xs flex flex-col gap-1.5`}>
+
+          {/* amount row */}
+          {amount != null && (
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-muted-foreground w-16 shrink-0">ยอดเงิน</span>
+              <span className={`font-semibold ${amountMatch === false ? "text-red-400" : "text-foreground"}`}>
+                {Number(amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท
+              </span>
+              {expectedAmount != null && (
+                <span className="text-muted-foreground text-[10px]">
+                  (ราคาสินค้า {Number(expectedAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท)
+                </span>
+              )}
+              {amountMatch === true  && <span className="text-green-400 text-[10px] font-medium">✅ ตรง</span>}
+              {amountMatch === false && <span className="text-red-400   text-[10px] font-medium">❌ ไม่ตรง</span>}
+            </div>
+          )}
+
+          {/* sender */}
+          {senderName && (
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-muted-foreground w-16 shrink-0">ผู้โอน</span>
+              <span className="text-foreground font-medium">{senderName}</span>
+              {senderBank && <span className="text-muted-foreground text-[10px]">{senderBank}</span>}
+            </div>
+          )}
+
+          {/* receiver */}
+          {rcvName && (
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-muted-foreground w-16 shrink-0">ผู้รับ</span>
+              <span className="text-foreground font-medium">{rcvName}</span>
+              {rcvBank && <span className="text-muted-foreground text-[10px]">{rcvBank}</span>}
+              {rcvChecked && rcvMatch === true  && <span className="text-green-400 text-[10px]">✅ ตรง</span>}
+              {rcvChecked && rcvMatch === false && <span className="text-red-400   text-[10px]">❌ ไม่ตรง</span>}
+            </div>
+          )}
+
+          {/* date/time */}
+          {dateTime && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-muted-foreground w-16 shrink-0">วันเวลา</span>
+              <span className="text-foreground">{fmtDate(dateTime)}</span>
+            </div>
+          )}
+
+          {/* trans ref */}
+          {transRef && (
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-muted-foreground w-16 shrink-0">Ref</span>
+              <span className="font-mono text-[10px] text-muted-foreground break-all">{transRef}</span>
+            </div>
+          )}
+
+          {/* error */}
+          {errMsg && status !== "verified" && (
+            <div className="flex items-start gap-2 mt-0.5">
+              <span className="text-muted-foreground w-16 shrink-0">เหตุผล</span>
+              <span className="text-red-400 leading-snug">{errMsg}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
