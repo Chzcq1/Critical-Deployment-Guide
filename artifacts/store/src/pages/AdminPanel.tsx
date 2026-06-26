@@ -491,28 +491,45 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
   };
   const c = cfg[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border", icon: "❓" };
 
-  const amount    = parsed.amount as number | undefined;
-  const senderName= parsed.sender_name as string | undefined;
-  const senderBank= parsed.sender_bank as string | undefined;
-  const rcvName   = parsed.receiver_name as string | undefined;
-  const rcvBank   = parsed.receiver_bank as string | undefined;
-  const transRef  = parsed.trans_ref as string | undefined;
-  const errMsg    = parsed.error_message as string | undefined;
+  const amount         = parsed.amount as number | undefined;
+  const expectedAmount = parsed.expected_amount as number | undefined;
+  const amountMatch    = parsed.amount_match as boolean | null | undefined;
+  const senderName     = parsed.sender_name as string | undefined;
+  const senderBank     = parsed.sender_bank as string | undefined;
+  const rcvName        = parsed.receiver_name as string | undefined;
+  const rcvBank        = parsed.receiver_bank as string | undefined;
+  const transRef       = parsed.trans_ref as string | undefined;
+  const errMsg         = parsed.error_message as string | undefined;
 
-  const hasDetail = amount || senderName || rcvName || transRef || errMsg;
+  const hasDetail = amount !== undefined || senderName || rcvName || transRef || errMsg;
+
+  const amountMatchBadge =
+    amountMatch === true  ? <span className="ml-1 px-1 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 text-[9px]">✅ ยอดตรง</span> :
+    amountMatch === false ? <span className="ml-1 px-1 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 text-[9px]">❌ ยอดไม่ตรง</span> :
+    null;
 
   return (
     <div className="flex flex-col gap-1 mt-1">
-      <button
-        onClick={() => hasDetail && setShowDetail((v) => !v)}
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${c.cls} ${hasDetail ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
-      >
-        <span>{c.icon}</span> {c.label}
-        {hasDetail && <span className="ml-0.5 opacity-60">{showDetail ? "▲" : "▼"}</span>}
-      </button>
+      <div className="flex items-center flex-wrap gap-1">
+        <button
+          onClick={() => hasDetail && setShowDetail((v) => !v)}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${c.cls} ${hasDetail ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+        >
+          <span>{c.icon}</span> {c.label}
+          {hasDetail && <span className="ml-0.5 opacity-60">{showDetail ? "▲" : "▼"}</span>}
+        </button>
+        {amountMatchBadge}
+      </div>
       {showDetail && hasDetail && (
         <div className="bg-muted/60 border border-border rounded-lg p-2 text-[10px] text-muted-foreground flex flex-col gap-0.5 min-w-[160px]">
-          {amount !== undefined && <p>💰 <span className="text-foreground font-medium">{Number(amount).toLocaleString("th-TH")} บาท</span></p>}
+          {amount !== undefined && (
+            <p>
+              💰 ยอดในสลีป: <span className={`font-medium ${amountMatch === false ? "text-red-400" : "text-foreground"}`}>{Number(amount).toLocaleString("th-TH")} บาท</span>
+              {expectedAmount !== undefined && (
+                <span className="opacity-60"> (ราคาสินค้า {Number(expectedAmount).toLocaleString("th-TH")} บาท)</span>
+              )}
+            </p>
+          )}
           {senderName && <p>👤 ผู้โอน: <span className="text-foreground">{senderName}</span>{senderBank ? ` (${senderBank})` : ""}</p>}
           {rcvName    && <p>🏦 ผู้รับ: <span className="text-foreground">{rcvName}</span>{rcvBank ? ` (${rcvBank})` : ""}</p>}
           {transRef   && <p className="font-mono opacity-70">Ref: {transRef}</p>}

@@ -252,7 +252,13 @@ async def admin_verify_slip(order_id: int, db: Session = Depends(get_db), admin:
     if order.payment_type != "slip" or not order.payment_proof:
         raise HTTPException(status_code=400, detail="ออเดอร์นี้ไม่มีสลีปให้ตรวจ")
 
-    result = await verify_slip(order.payment_proof)
+    # Look up product price so we can cross-check amount on the slip
+    expected_amount: float | None = None
+    product = db.query(Product).filter(Product.id == order.product_id).first()
+    if product and product.price is not None:
+        expected_amount = float(product.price)
+
+    result = await verify_slip(order.payment_proof, expected_amount=expected_amount)
     order.slip_verify_status = result["status"]
     order.slip_verify_result = _json.dumps(result, ensure_ascii=False, default=str)
     db.commit()

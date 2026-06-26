@@ -63,7 +63,8 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
             mode = (mode_row.value if mode_row else None) or "off"
             if mode == "auto":
                 from backend.slip_verify import verify_slip
-                result = await verify_slip(payload.payment_proof)
+                expected_amount = float(product.price) if product and product.price is not None else None
+                result = await verify_slip(payload.payment_proof, expected_amount=expected_amount)
                 order.slip_verify_status = result["status"]
                 order.slip_verify_result = json.dumps(result, ensure_ascii=False, default=str)
                 db.commit()
