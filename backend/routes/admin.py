@@ -70,9 +70,9 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     db.add(session)
     db.commit()
 
-    sent = await bot_module.send_otp(body.telegram_id, otp)
+    sent, err_msg = await bot_module.send_otp(body.telegram_id, otp)
     if not sent:
-        raise HTTPException(status_code=500, detail="Failed to send OTP. Check bot configuration.")
+        raise HTTPException(status_code=500, detail=f"ส่ง OTP ไม่สำเร็จ: {err_msg}")
 
     return {"message": "OTP sent to admin group chat"}
 

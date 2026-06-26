@@ -170,10 +170,16 @@ async def reject_order(order_id: int, customer_id: int) -> bool:
         return False
 
 
-async def send_otp(telegram_id: int, otp_code: str) -> bool:
-    if not settings.bot_token or not settings.admin_group_id:
-        logger.warning("Bot not configured — cannot send OTP")
-        return False
+async def send_otp(telegram_id: int, otp_code: str) -> tuple[bool, str]:
+    """Returns (success, error_message). error_message is empty string on success."""
+    if not settings.bot_token:
+        msg = "BOT_TOKEN ไม่ได้ตั้งค่า"
+        logger.warning(msg)
+        return False, msg
+    if not settings.admin_group_id:
+        msg = "ADMIN_GROUP_ID ไม่ได้ตั้งค่า"
+        logger.warning(msg)
+        return False, msg
 
     from telegram.error import TelegramError
     bot = get_bot()
@@ -188,10 +194,10 @@ async def send_otp(telegram_id: int, otp_code: str) -> bool:
                 f"⏰ หมดอายุใน 5 นาที"
             ),
         )
-        return True
+        return True, ""
     except TelegramError as e:
         logger.error(f"Failed to send OTP: {e}")
-        return False
+        return False, str(e)
 
 
 async def setup_webhook(webhook_url: str) -> bool:
