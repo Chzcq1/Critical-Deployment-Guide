@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink } from "lucide-react";
@@ -679,10 +679,16 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showManual, setShowManual] = useState(false);
+  const widgetRef = useRef<HTMLDivElement>(null);
 
-  const requestOtp = async () => {
-    const id = parseInt(telegramId);
-    if (!id) { setError("กรุณากรอก Telegram ID ที่ถูกต้อง"); return; }
+  const { data: settings } = useQuery<{ bot_username: string }>({
+    queryKey: ["store-settings-login"],
+    queryFn: () => fetch("/api/store-settings").then((r) => r.json()),
+  });
+  const botUsername = settings?.bot_username || "";
+
+  const doRequestOtp = async (id: number) => {
     setLoading(true);
     setError("");
     const res = await fetch("/api/admin/request-otp", {
@@ -691,8 +697,18 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
       body: JSON.stringify({ telegram_id: id }),
     });
     setLoading(false);
-    if (!res.ok) { setError("ส่ง OTP ไม่สำเร็จ ตรวจสอบการตั้งค่าบอต"); return; }
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      setError(errData.detail || "ส่ง OTP ไม่สำเร็จ ตรวจสอบการตั้งค่าบอต");
+      return;
+    }
     setStep("otp");
+  };
+
+  const requestOtp = () => {
+    const id = parseInt(telegramId);
+    if (!id) { setError("กรุณากรอก Telegram ID ที่ถูกต้อง"); return; }
+    doRequestOtp(id);
   };
 
   const verifyOtp = async () => {
@@ -710,6 +726,31 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
     onLogin(data.access_token);
   };
 
+  useEffect(() => {
+    if (!botUsername || !widgetRef.current || step !== "telegram-id") return;
+    const container = widgetRef.current;
+    container.innerHTML = "";
+
+    (window as any).onTelegramAdminAuth = (user: { id: number; first_name: string }) => {
+      setTelegramId(String(user.id));
+      doRequestOtp(user.id);
+    };
+
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", botUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-onauth", "onTelegramAdminAuth(user)");
+    script.setAttribute("data-request-access", "write");
+    script.async = true;
+    container.appendChild(script);
+
+    return () => {
+      delete (window as any).onTelegramAdminAuth;
+      container.innerHTML = "";
+    };
+  }, [botUsername, step]);
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <motion.div
@@ -723,31 +764,81 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
         </div>
 
         {step === "telegram-id" ? (
-          <div className="flex flex-col gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
-                Telegram ID ของคุณ
-              </label>
-              <input
-                type="number"
-                placeholder="123456789"
-                value={telegramId}
-                onChange={(e) => setTelegramId(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && requestOtp()}
-                className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-              />
-              <p className="text-xs text-muted-foreground mt-1.5">
-                OTP จะถูกส่งไปที่กลุ่มแอดมิน
-              </p>
-            </div>
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-            <Button
-              onClick={requestOtp}
-              disabled={loading}
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-1"
-            >
-              {loading ? "กำลังส่ง..." : <>ส่ง OTP <ChevronRight size={14} /></>}
-            </Button>
+          <div className="flex flex-col gap-5">
+            {botUsername ? (
+              <>
+                <div className="flex flex-col items-center gap-3 py-2">
+                  <p className="text-sm text-muted-foreground text-center">
+                    กดปุ่มด้านล่างเพื่อยืนยันตัวตนผ่าน Telegram<br />
+                    <span className="text-xs">OTP จะถูกส่งไปที่กลุ่มแอดมินทันที</span>
+                  </p>
+                  {loading ? (
+                    <div className="flex items-center gap-2 text-primary text-sm py-2">
+                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      กำลังส่ง OTP...
+                    </div>
+                  ) : (
+                    <div ref={widgetRef} className="flex justify-center" />
+                  )}
+                </div>
+                <div className="relative flex items-center gap-3">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-muted-foreground shrink-0">หรือ</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowManual((v) => !v)}
+                  className="text-xs text-muted-foreground hover:text-foreground text-center transition-colors"
+                >
+                  {showManual ? "ซ่อนการกรอก ID เอง ↑" : "กรอก Telegram ID เอง ↓"}
+                </button>
+                {showManual && (
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="number"
+                      placeholder="123456789"
+                      value={telegramId}
+                      onChange={(e) => setTelegramId(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && requestOtp()}
+                      className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                    />
+                    <Button
+                      onClick={requestOtp}
+                      disabled={loading}
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-1"
+                    >
+                      {loading ? "กำลังส่ง..." : <>ส่ง OTP <ChevronRight size={14} /></>}
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                    Telegram ID ของคุณ
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="123456789"
+                    value={telegramId}
+                    onChange={(e) => setTelegramId(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && requestOtp()}
+                    className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1.5">OTP จะถูกส่งไปที่กลุ่มแอดมิน</p>
+                </div>
+                <Button
+                  onClick={requestOtp}
+                  disabled={loading}
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-1"
+                >
+                  {loading ? "กำลังส่ง..." : <>ส่ง OTP <ChevronRight size={14} /></>}
+                </Button>
+              </div>
+            )}
+            {error && <p className="text-red-400 text-sm text-center">{error}</p>}
           </div>
         ) : (
           <div className="flex flex-col gap-4">
