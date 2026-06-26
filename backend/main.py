@@ -16,12 +16,39 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _run_migrations(engine):
+    """Add missing columns to existing tables (safe to run on every startup)."""
+    migrations = [
+        # link_sent added to orders
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS link_sent BOOLEAN NOT NULL DEFAULT FALSE",
+        # admin_message_id added to orders
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS admin_message_id BIGINT",
+        # telegram_first_name added to orders (customer name)
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS telegram_first_name VARCHAR(255)",
+        # payment_type added to orders
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) NOT NULL DEFAULT 'slip'",
+    ]
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Migration skipped (probably already applied): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from backend.database import engine, Base
     if engine is not None:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified")
+        try:
+            _run_migrations(engine)
+            logger.info("Database migrations applied")
+        except Exception as e:
+            logger.error(f"Migration error: {e}")
     else:
         logger.warning("Skipping DB init — DATABASE_URL not set")
 
