@@ -12,3 +12,15 @@ httpx==0.28.1
 cryptography==44.0.0
 itsdangerous==2.2.0
 Pillow==11.0.0
+aiofiles
+fastapi
+httpx
+itsdangerous
+psycopg2-binary
+pydantic
+pydantic-settings
+python-dotenv
+python-multipart
+python-telegram-bot
+sqlalchemy
+uvicorn[standard]
