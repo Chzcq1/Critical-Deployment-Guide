@@ -189,10 +189,10 @@ async def send_otp(telegram_id: int, otp_code: str) -> tuple[bool, str]:
             chat_id=settings.admin_group_id,
             text=(
                 f"🔐 คำขอเข้าสู่ระบบแอดมิน\n\n"
-                f"Telegram ID: {telegram_id}\n\n"
-                f"รหัส OTP: {otp_code}\n\n"
+                f"รหัส OTP: <b>{otp_code}</b>\n\n"
                 f"⏰ หมดอายุใน 5 นาที"
             ),
+            parse_mode="HTML",
         )
         return True, ""
     except TelegramError as e:

@@ -83,11 +83,12 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
 
 @router.post("/admin/verify-otp", response_model=AdminToken)
 def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
+    otp_input = (body.otp_code or "").strip()
     session = (
         db.query(OTPSession)
         .filter(
             OTPSession.telegram_id == ADMIN_SESSION_ID,
-            OTPSession.otp_code == body.otp_code,
+            OTPSession.otp_code == otp_input,
             OTPSession.is_used == False,
             OTPSession.expires_at > datetime.now(timezone.utc),
         )
@@ -100,7 +101,7 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     session.is_used = True
     db.commit()
 
-    token = create_admin_token(body.telegram_id)
+    token = create_admin_token(ADMIN_SESSION_ID)
     return AdminToken(access_token=token)
 
 
