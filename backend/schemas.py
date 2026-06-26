@@ -46,7 +46,7 @@ class TelegramUser(BaseModel):
 
 
 class OrderSubmit(BaseModel):
-    telegram_user_id: int
+    telegram_user_id: Optional[int] = None
     telegram_username: Optional[str] = None
     telegram_first_name: Optional[str] = None
     product_id: int
@@ -56,12 +56,13 @@ class OrderSubmit(BaseModel):
 
 class OrderResponse(BaseModel):
     id: int
-    telegram_user_id: int
+    telegram_user_id: Optional[int] = None
     telegram_username: Optional[str] = None
     telegram_first_name: Optional[str] = None
     product_id: int
     product_name: str
     payment_type: str
+    payment_proof: Optional[str] = None
     status: str
     created_at: Optional[datetime] = None
 
@@ -80,3 +81,17 @@ class OTPVerify(BaseModel):
 class AdminToken(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class StoreSettingsUpdate(BaseModel):
+    hero_title: Optional[str] = None
+    hero_subtitle: Optional[str] = None
+    announcement: Optional[str] = None
+    store_name: Optional[str] = None
+
+
+class StoreSettingsResponse(BaseModel):
+    hero_title: str
+    hero_subtitle: str
+    announcement: str
+    store_name: str

@@ -22,7 +22,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    telegram_user_id = Column(BigInteger, nullable=False, index=True)
+    telegram_user_id = Column(BigInteger, nullable=True, index=True)
     telegram_username = Column(String(255), nullable=True)
     telegram_first_name = Column(String(255), nullable=True)
     product_id = Column(Integer, nullable=False)
@@ -44,3 +44,12 @@ class OTPSession(Base):
     is_used = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class StoreSettings(Base):
+    __tablename__ = "store_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, nullable=False)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

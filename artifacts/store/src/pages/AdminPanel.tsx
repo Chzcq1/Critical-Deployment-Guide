@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight } from "lucide-react";
+import { motion } from "framer-motion";
+import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,13 +20,21 @@ interface Product {
 
 interface Order {
   id: number;
-  telegram_user_id: number;
+  telegram_user_id: number | null;
   telegram_username: string | null;
   telegram_first_name: string | null;
   product_name: string;
   payment_type: string;
+  payment_proof: string | null;
   status: string;
   created_at: string;
+}
+
+interface StoreSettings {
+  hero_title: string;
+  hero_subtitle: string;
+  announcement: string;
+  store_name: string;
 }
 
 function authHeaders(token: string) {
@@ -109,14 +117,14 @@ function ProductFormModal({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Product" : "Add Product"}</DialogTitle>
+          <DialogTitle>{isEdit ? "แก้ไขสินค้า" : "เพิ่มสินค้า"}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
-          {field("Product Name *", "name", "e.g. Trading Signals Bundle")}
+          {field("ชื่อสินค้า *", "name", "เช่น กลุ่มสัญญาณเทรด")}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</label>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">รายละเอียด</label>
             <textarea
-              placeholder="Describe what the customer gets..."
+              placeholder="อธิบายสิ่งที่ลูกค้าจะได้รับ..."
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               rows={3}
@@ -124,13 +132,13 @@ function ProductFormModal({
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {field("Price (฿) *", "price", "500", "number")}
-            {field("Fake Discount Price (฿)", "fake_discount_price", "799", "number")}
+            {field("ราคา (฿) *", "price", "500", "number")}
+            {field("ราคาเดิม (฿)", "fake_discount_price", "799", "number")}
           </div>
-          {field("Image URL", "image_url", "https://...")}
+          {field("URL รูปภาพ", "image_url", "https://...")}
           {field("Telegram Group IDs", "telegram_group_ids", "-100123456789,-100987654321")}
           <p className="text-xs text-muted-foreground -mt-1">
-            Comma-separated group IDs. The bot will generate single-use invite links for each group.
+            คั่นด้วยคอมมาสำหรับหลายกลุ่ม บอตจะสร้างลิงก์เชิญใช้ครั้งเดียวให้แต่ละกลุ่ม
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -142,7 +150,7 @@ function ProductFormModal({
                 className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form.is_active ? "translate-x-5" : ""}`}
               />
             </button>
-            <span className="text-sm text-foreground">{form.is_active ? "Active" : "Inactive"}</span>
+            <span className="text-sm text-foreground">{form.is_active ? "เปิดขาย" : "ปิดขาย"}</span>
           </div>
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <Button
@@ -150,7 +158,7 @@ function ProductFormModal({
             disabled={mutation.isPending || !form.name || !form.price}
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold mt-1"
           >
-            {mutation.isPending ? "Saving..." : isEdit ? "Save Changes" : "Create Product"}
+            {mutation.isPending ? "กำลังบันทึก..." : isEdit ? "บันทึกการแก้ไข" : "เพิ่มสินค้า"}
           </Button>
         </div>
       </DialogContent>
@@ -180,9 +188,9 @@ function ProductsTab({ token }: { token: string }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-sm text-muted-foreground">{products.length} products</h2>
+        <h2 className="text-sm text-muted-foreground">{products.length} สินค้า</h2>
         <Button size="sm" onClick={() => setEditing("new")} className="bg-primary text-primary-foreground gap-1">
-          <Plus size={14} /> Add Product
+          <Plus size={14} /> เพิ่มสินค้า
         </Button>
       </div>
 
@@ -195,7 +203,7 @@ function ProductsTab({ token }: { token: string }) {
       ) : products.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Package size={32} className="mx-auto mb-2 opacity-40" />
-          <p className="text-sm">No products yet. Add one to get started.</p>
+          <p className="text-sm">ยังไม่มีสินค้า กดเพิ่มสินค้าเพื่อเริ่มต้น</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -219,7 +227,7 @@ function ProductsTab({ token }: { token: string }) {
               </div>
               {!p.is_active && (
                 <Badge variant="outline" className="text-xs border-muted text-muted-foreground">
-                  Inactive
+                  ปิดขาย
                 </Badge>
               )}
               <div className="flex items-center gap-1">
@@ -230,7 +238,7 @@ function ProductsTab({ token }: { token: string }) {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    if (confirm(`Delete "${p.name}"?`)) deleteMutation.mutate(p.id);
+                    if (confirm(`ลบ "${p.name}"?`)) deleteMutation.mutate(p.id);
                   }}
                   className="h-8 w-8 p-0 text-muted-foreground hover:text-red-400"
                 >
@@ -253,6 +261,25 @@ function ProductsTab({ token }: { token: string }) {
   );
 }
 
+function OrderProofViewer({ proof, type }: { proof: string | null; type: string }) {
+  if (!proof) return <span className="text-muted-foreground text-xs">—</span>;
+  if (type === "truemoney") {
+    return (
+      <a href={proof} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline">
+        ลิงก์ <ExternalLink size={10} />
+      </a>
+    );
+  }
+  if (proof.startsWith("data:image")) {
+    return (
+      <a href={proof} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline">
+        ดูสลีป <ExternalLink size={10} />
+      </a>
+    );
+  }
+  return <span className="text-xs text-muted-foreground">{proof.slice(0, 30)}...</span>;
+}
+
 function OrdersTab({ token }: { token: string }) {
   const { data: orders = [], isLoading } = useQuery<Order[]>({
     queryKey: ["admin-orders"],
@@ -264,7 +291,7 @@ function OrdersTab({ token }: { token: string }) {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-sm text-muted-foreground">{orders.length} orders</h2>
+        <h2 className="text-sm text-muted-foreground">{orders.length} ออเดอร์</h2>
       </div>
       {isLoading ? (
         <div className="space-y-2">
@@ -275,7 +302,7 @@ function OrdersTab({ token }: { token: string }) {
       ) : orders.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <ClipboardList size={32} className="mx-auto mb-2 opacity-40" />
-          <p className="text-sm">No orders yet.</p>
+          <p className="text-sm">ยังไม่มีออเดอร์</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -283,11 +310,11 @@ function OrdersTab({ token }: { token: string }) {
             <thead>
               <tr className="border-b border-border bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">ID</th>
-                <th className="px-4 py-3 text-left">Customer</th>
-                <th className="px-4 py-3 text-left">Product</th>
-                <th className="px-4 py-3 text-left">Payment</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Date</th>
+                <th className="px-4 py-3 text-left">ลูกค้า</th>
+                <th className="px-4 py-3 text-left">สินค้า</th>
+                <th className="px-4 py-3 text-left">หลักฐาน</th>
+                <th className="px-4 py-3 text-left">สถานะ</th>
+                <th className="px-4 py-3 text-left">วันที่</th>
               </tr>
             </thead>
             <tbody>
@@ -297,16 +324,19 @@ function OrdersTab({ token }: { token: string }) {
                   <td className="px-4 py-3">
                     <p className="text-foreground font-medium">{o.telegram_first_name || "—"}</p>
                     <p className="text-xs text-muted-foreground">
-                      {o.telegram_username ? `@${o.telegram_username}` : ""} · {o.telegram_user_id}
+                      {o.telegram_username ? `@${o.telegram_username}` : ""}
+                      {o.telegram_user_id ? ` · ${o.telegram_user_id}` : ""}
                     </p>
                   </td>
                   <td className="px-4 py-3 text-foreground">{o.product_name}</td>
-                  <td className="px-4 py-3 text-muted-foreground capitalize">{o.payment_type}</td>
+                  <td className="px-4 py-3">
+                    <OrderProofViewer proof={o.payment_proof ?? null} type={o.payment_type} />
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={o.status} />
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
-                    {o.created_at ? new Date(o.created_at).toLocaleDateString() : "—"}
+                    {o.created_at ? new Date(o.created_at).toLocaleDateString("th-TH") : "—"}
                   </td>
                 </tr>
               ))}
@@ -314,6 +344,117 @@ function OrdersTab({ token }: { token: string }) {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function SettingsTab({ token }: { token: string }) {
+  const qc = useQueryClient();
+  const [saved, setSaved] = useState(false);
+
+  const { data: settings, isLoading } = useQuery<StoreSettings>({
+    queryKey: ["store-settings"],
+    queryFn: () => fetch("/api/store-settings").then((r) => r.json()),
+  });
+
+  const [form, setForm] = useState<StoreSettings>({
+    store_name: "",
+    hero_title: "",
+    hero_subtitle: "",
+    announcement: "",
+  });
+
+  const [initialized, setInitialized] = useState(false);
+  if (settings && !initialized) {
+    setForm(settings);
+    setInitialized(true);
+  }
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/store-settings", {
+        method: "PUT",
+        headers: authHeaders(token),
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error("Failed to save settings");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["store-settings"] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  if (isLoading) {
+    return <div className="h-40 animate-pulse bg-card border border-border rounded-lg" />;
+  }
+
+  return (
+    <div className="flex flex-col gap-6 max-w-xl">
+      <div className="flex flex-col gap-1">
+        <h2 className="font-semibold text-foreground">ตั้งค่าหน้าร้าน</h2>
+        <p className="text-sm text-muted-foreground">แก้ไขข้อความที่แสดงบนหน้าหลักของร้าน</p>
+      </div>
+
+      <div className="flex flex-col gap-4 bg-card border border-border rounded-xl p-5">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อร้าน</label>
+          <input
+            type="text"
+            value={form.store_name}
+            onChange={(e) => setForm((f) => ({ ...f, store_name: e.target.value }))}
+            placeholder="DigitalStore"
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">หัวข้อหลัก (Hero Title)</label>
+          <input
+            type="text"
+            value={form.hero_title}
+            onChange={(e) => setForm((f) => ({ ...f, hero_title: e.target.value }))}
+            placeholder="สินค้าดิจิทัลพรีเมียม"
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">คำอธิบายใต้หัวข้อ (Hero Subtitle)</label>
+          <input
+            type="text"
+            value={form.hero_subtitle}
+            onChange={(e) => setForm((f) => ({ ...f, hero_subtitle: e.target.value }))}
+            placeholder="รับสิทธิ์ทันทีผ่าน Telegram..."
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 bg-card border border-yellow-500/30 rounded-xl p-5">
+        <div className="flex items-center gap-2">
+          <Megaphone size={15} className="text-yellow-400" />
+          <h3 className="font-semibold text-foreground text-sm">ข้อความประกาศ</h3>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          แสดงแถบประกาศสีเหลืองด้านบนหน้าร้าน ปล่อยว่างเพื่อซ่อน
+        </p>
+        <textarea
+          rows={5}
+          value={form.announcement}
+          onChange={(e) => setForm((f) => ({ ...f, announcement: e.target.value }))}
+          placeholder={`⚠️ ประกาศสำคัญ\n\nห้ามปลอมแปลงสลีปโอนเงิน ขีดค่า ขีดชื่อ หรือแก้ไขคิวอาร์โค้ดใดๆ ทั้งสิ้น\nแอดมินไม่สามารถตรวจสอบสลีปที่ถูกแก้ไขได้ และจะถูกดำเนินคดีตามกฎหมาย`}
+          className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-yellow-500/50 resize-none"
+        />
+      </div>
+
+      <Button
+        onClick={() => mutation.mutate()}
+        disabled={mutation.isPending}
+        className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold self-start px-8"
+      >
+        {mutation.isPending ? "กำลังบันทึก..." : saved ? "✓ บันทึกแล้ว!" : "บันทึกการตั้งค่า"}
+      </Button>
     </div>
   );
 }
@@ -327,7 +468,7 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
 
   const requestOtp = async () => {
     const id = parseInt(telegramId);
-    if (!id) { setError("Enter a valid Telegram ID."); return; }
+    if (!id) { setError("กรุณากรอก Telegram ID ที่ถูกต้อง"); return; }
     setLoading(true);
     setError("");
     const res = await fetch("/api/admin/request-otp", {
@@ -336,7 +477,7 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
       body: JSON.stringify({ telegram_id: id }),
     });
     setLoading(false);
-    if (!res.ok) { setError("Failed to send OTP. Check bot configuration."); return; }
+    if (!res.ok) { setError("ส่ง OTP ไม่สำเร็จ ตรวจสอบการตั้งค่าบอต"); return; }
     setStep("otp");
   };
 
@@ -349,7 +490,7 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
       body: JSON.stringify({ telegram_id: parseInt(telegramId), otp_code: otp }),
     });
     setLoading(false);
-    if (!res.ok) { setError("Invalid or expired OTP."); return; }
+    if (!res.ok) { setError("OTP ไม่ถูกต้องหรือหมดอายุ"); return; }
     const data = await res.json();
     localStorage.setItem("admin_token", data.access_token);
     onLogin(data.access_token);
@@ -364,14 +505,14 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
       >
         <div className="flex items-center gap-2 mb-8">
           <Shield size={20} className="text-primary" />
-          <span className="font-bold text-foreground">Admin Access</span>
+          <span className="font-bold text-foreground">เข้าสู่ระบบแอดมิน</span>
         </div>
 
         {step === "telegram-id" ? (
           <div className="flex flex-col gap-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
-                Your Telegram ID
+                Telegram ID ของคุณ
               </label>
               <input
                 type="number"
@@ -382,7 +523,7 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
                 className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               />
               <p className="text-xs text-muted-foreground mt-1.5">
-                An OTP will be sent to your admin group chat.
+                OTP จะถูกส่งไปที่กลุ่มแอดมิน
               </p>
             </div>
             {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -391,14 +532,14 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
               disabled={loading}
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-1"
             >
-              {loading ? "Sending..." : <>Send OTP <ChevronRight size={14} /></>}
+              {loading ? "กำลังส่ง..." : <>ส่ง OTP <ChevronRight size={14} /></>}
             </Button>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
-                OTP Code
+                รหัส OTP
               </label>
               <input
                 type="text"
@@ -410,7 +551,7 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
                 className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-lg text-center font-mono tracking-widest text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               />
               <p className="text-xs text-muted-foreground mt-1.5 text-center">
-                Check your admin group chat for the OTP.
+                ตรวจสอบ OTP ในกลุ่มแอดมิน
               </p>
             </div>
             {error && <p className="text-red-400 text-sm text-center">{error}</p>}
@@ -419,10 +560,10 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
               disabled={loading}
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
             >
-              {loading ? "Verifying..." : "Verify & Enter"}
+              {loading ? "กำลังตรวจสอบ..." : "ยืนยัน & เข้าสู่ระบบ"}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => { setStep("telegram-id"); setError(""); }} className="text-muted-foreground">
-              Back
+              ย้อนกลับ
             </Button>
           </div>
         )}
@@ -452,7 +593,7 @@ export default function AdminPanel() {
             <span className="font-bold text-foreground text-sm">Store Admin</span>
           </div>
           <Button size="sm" variant="ghost" onClick={handleLogout} className="text-muted-foreground gap-1.5 text-xs">
-            <LogOut size={13} /> Sign Out
+            <LogOut size={13} /> ออกจากระบบ
           </Button>
         </div>
       </header>
@@ -461,10 +602,13 @@ export default function AdminPanel() {
         <Tabs defaultValue="products">
           <TabsList className="bg-muted mb-6">
             <TabsTrigger value="products" className="gap-2">
-              <Package size={14} /> Products
+              <Package size={14} /> สินค้า
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-2">
-              <ClipboardList size={14} /> Orders
+              <ClipboardList size={14} /> ออเดอร์
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-2">
+              <Settings size={14} /> ตั้งค่าร้าน
             </TabsTrigger>
           </TabsList>
           <TabsContent value="products">
@@ -472,6 +616,9 @@ export default function AdminPanel() {
           </TabsContent>
           <TabsContent value="orders">
             <OrdersTab token={token} />
+          </TabsContent>
+          <TabsContent value="settings">
+            <SettingsTab token={token} />
           </TabsContent>
         </Tabs>
       </main>

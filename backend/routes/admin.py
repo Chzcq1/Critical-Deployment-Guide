@@ -1,18 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from backend.database import get_db
-from backend.models import Product, Order, OTPSession
+from backend.models import Product, Order, OTPSession, StoreSettings
 from backend.schemas import (
     ProductCreate, ProductUpdate, ProductResponse,
     OrderResponse, OTPRequest, OTPVerify, AdminToken,
+    StoreSettingsUpdate, StoreSettingsResponse,
 )
 from backend.auth import generate_otp, create_admin_token, verify_admin_token
 from backend import bot as bot_module
 
 router = APIRouter()
+
+SETTING_DEFAULTS = {
+    "hero_title": "สินค้าดิจิทัลพรีเมียม",
+    "hero_subtitle": "รับสิทธิ์ทันทีผ่าน Telegram — ชำระเงิน รอยืนยัน รับลิงก์",
+    "announcement": "",
+    "store_name": "DigitalStore",
+}
 
 
 def get_admin(authorization: Optional[str] = Header(None)) -> dict:
@@ -23,6 +31,20 @@ def get_admin(authorization: Optional[str] = Header(None)) -> dict:
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return payload
+
+
+def _get_setting(db: Session, key: str) -> str:
+    row = db.query(StoreSettings).filter(StoreSettings.key == key).first()
+    return row.value if (row and row.value is not None) else SETTING_DEFAULTS.get(key, "")
+
+
+def _set_setting(db: Session, key: str, value: str):
+    row = db.query(StoreSettings).filter(StoreSettings.key == key).first()
+    if row:
+        row.value = value
+    else:
+        row = StoreSettings(key=key, value=value)
+        db.add(row)
 
 
 @router.post("/admin/request-otp")
@@ -106,3 +128,27 @@ def delete_product(product_id: int, db: Session = Depends(get_db), admin: dict =
 @router.get("/admin/orders", response_model=List[OrderResponse])
 def list_orders(db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
     return db.query(Order).order_by(Order.id.desc()).all()
+
+
+@router.get("/store-settings", response_model=StoreSettingsResponse)
+def get_store_settings(db: Session = Depends(get_db)):
+    return StoreSettingsResponse(
+        hero_title=_get_setting(db, "hero_title"),
+        hero_subtitle=_get_setting(db, "hero_subtitle"),
+        announcement=_get_setting(db, "announcement"),
+        store_name=_get_setting(db, "store_name"),
+    )
+
+
+@router.put("/admin/store-settings", response_model=StoreSettingsResponse)
+def update_store_settings(body: StoreSettingsUpdate, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    updates = body.model_dump(exclude_none=True)
+    for key, value in updates.items():
+        _set_setting(db, key, value)
+    db.commit()
+    return StoreSettingsResponse(
+        hero_title=_get_setting(db, "hero_title"),
+        hero_subtitle=_get_setting(db, "hero_subtitle"),
+        announcement=_get_setting(db, "announcement"),
+        store_name=_get_setting(db, "store_name"),
+    )

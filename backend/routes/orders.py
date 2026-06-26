@@ -13,7 +13,7 @@ async def _send_to_admin(order_id: int, product_name: str, order: Order):
     message_id = await bot_module.send_approval_request(
         order_id=order_id,
         product_name=product_name,
-        customer_id=order.telegram_user_id,
+        customer_id=order.telegram_user_id or 0,
         customer_username=order.telegram_username,
         customer_first_name=order.telegram_first_name,
         payment_proof=order.payment_proof,
@@ -29,7 +29,7 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Product not found")
 
     order = Order(
-        telegram_user_id=payload.telegram_user_id,
+        telegram_user_id=payload.telegram_user_id or None,
         telegram_username=payload.telegram_username,
         telegram_first_name=payload.telegram_first_name,
         product_id=payload.product_id,

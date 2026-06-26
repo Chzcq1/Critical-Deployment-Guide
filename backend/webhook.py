@@ -1,7 +1,6 @@
 import logging
 from fastapi import APIRouter, Request, HTTPException
-from telegram import Update, Bot
-from telegram.ext import Application
+from telegram import Update
 from backend.config import get_settings
 from backend import bot as bot_module
 
@@ -17,7 +16,12 @@ async def telegram_webhook(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    update = Update.de_json(data, bot_module.bot)
+    try:
+        tg_bot = bot_module.get_bot()
+    except RuntimeError:
+        return {"ok": True}
+
+    update = Update.de_json(data, tg_bot)
 
     if update.callback_query:
         query = update.callback_query
@@ -40,33 +44,48 @@ async def telegram_webhook(request: Request):
         try:
             order = db.query(Order).filter(Order.id == order_id).first()
             if not order or order.status != "pending":
-                await query.edit_message_text(
-                    text=f"{query.message.text}\n\n⚠️ Order already processed.",
-                )
+                try:
+                    if query.message.photo:
+                        await query.edit_message_caption(caption=(query.message.caption or "") + "\n\n⚠️ Order already processed.")
+                    else:
+                        await query.edit_message_text(text=(query.message.text or "") + "\n\n⚠️ Order already processed.")
+                except Exception:
+                    pass
                 return {"ok": True}
 
-            admin_name = query.from_user.first_name or "Admin"
+            admin_name = query.from_user.first_name if query.from_user else "Admin"
 
             if action == "approve":
                 order.status = "approved"
                 db.commit()
 
-                group_ids = order.product_id and _get_group_ids(db, order.product_id) or ""
-                await bot_module.approve_order(order.id, order.telegram_user_id, group_ids)
-                await query.edit_message_text(
-                    text=f"{query.message.text}\n\n✅ *Approved* by {admin_name}",
-                    parse_mode="Markdown",
-                )
+                group_ids = _get_group_ids(db, order.product_id) if order.product_id else ""
+                await bot_module.approve_order(order.id, order.telegram_user_id or 0, group_ids)
+
+                suffix = f"\n\n✅ อนุมัติโดย {admin_name}"
+                try:
+                    if query.message.photo:
+                        await query.edit_message_caption(caption=(query.message.caption or "") + suffix)
+                    else:
+                        await query.edit_message_text(text=(query.message.text or "") + suffix)
+                except Exception:
+                    pass
 
             elif action == "reject":
                 order.status = "rejected"
                 db.commit()
 
-                await bot_module.reject_order(order.id, order.telegram_user_id)
-                await query.edit_message_text(
-                    text=f"{query.message.text}\n\n❌ *Rejected* by {admin_name}",
-                    parse_mode="Markdown",
-                )
+                await bot_module.reject_order(order.id, order.telegram_user_id or 0)
+
+                suffix = f"\n\n❌ ปฏิเสธโดย {admin_name}"
+                try:
+                    if query.message.photo:
+                        await query.edit_message_caption(caption=(query.message.caption or "") + suffix)
+                    else:
+                        await query.edit_message_text(text=(query.message.text or "") + suffix)
+                except Exception:
+                    pass
+
         except Exception as e:
             logger.error(f"Error processing callback: {e}")
         finally:

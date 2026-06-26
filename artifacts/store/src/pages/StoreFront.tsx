@@ -1,14 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShoppingBag, X, Upload, Link, Clock, LogOut, ChevronRight, Shield, Zap } from "lucide-react";
+import { ShoppingBag, X, Upload, Link, Clock, ChevronRight, Zap, Megaphone, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TelegramLoginWidget } from "@/components/TelegramLoginWidget";
-
-const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "your_bot";
 
 interface Product {
   id: number;
@@ -20,14 +17,11 @@ interface Product {
   is_active: boolean;
 }
 
-interface TelegramUser {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
+interface StoreSettings {
+  hero_title: string;
+  hero_subtitle: string;
+  announcement: string;
+  store_name: string;
 }
 
 function useCountdown(productId: number) {
@@ -137,7 +131,7 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
             onClick={() => onBuy(product)}
             className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
           >
-            Buy
+            ซื้อเลย
             <ChevronRight size={14} />
           </Button>
         </div>
@@ -148,13 +142,14 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
 
 function BuyModal({
   product,
-  user,
   onClose,
 }: {
   product: Product | null;
-  user: TelegramUser | null;
   onClose: () => void;
 }) {
+  const [step, setStep] = useState<"info" | "payment">("info");
+  const [customerName, setCustomerName] = useState("");
+  const [customerTelegram, setCustomerTelegram] = useState("");
   const [paymentType, setPaymentType] = useState<"slip" | "truemoney">("slip");
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
@@ -165,18 +160,24 @@ function BuyModal({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!product || !user) return;
+      if (!product) return;
       let paymentProof = trueMoneyLink;
       if (paymentType === "slip" && slipFile) {
-        paymentProof = `[Image: ${slipFile.name}]`;
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(slipFile);
+        });
+        paymentProof = base64;
       }
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          telegram_user_id: user.id,
-          telegram_username: user.username || null,
-          telegram_first_name: user.first_name,
+          telegram_user_id: null,
+          telegram_username: customerTelegram.replace(/^@/, "") || null,
+          telegram_first_name: customerName,
           product_id: product.id,
           payment_proof: paymentProof,
           payment_type: paymentType,
@@ -186,7 +187,7 @@ function BuyModal({
       return res.json();
     },
     onSuccess: () => setSubmitted(true),
-    onError: () => setError("Failed to submit. Please try again."),
+    onError: () => setError("ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"),
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,21 +198,42 @@ function BuyModal({
     setSlipPreview(url);
   };
 
+  const handleNextStep = () => {
+    setError("");
+    if (!customerName.trim()) {
+      setError("กรุณากรอกชื่อของคุณ");
+      return;
+    }
+    setStep("payment");
+  };
+
   const handleSubmit = () => {
     setError("");
     if (paymentType === "slip" && !slipFile) {
-      setError("Please upload your payment slip.");
+      setError("กรุณาแนบสลีปการโอนเงิน");
       return;
     }
     if (paymentType === "truemoney" && !trueMoneyLink.trim()) {
-      setError("Please paste your TrueMoney link.");
+      setError("กรุณาวางลิงก์ซองทรูมันนี่");
       return;
     }
     mutation.mutate();
   };
 
+  const handleClose = () => {
+    setStep("info");
+    setCustomerName("");
+    setCustomerTelegram("");
+    setSlipFile(null);
+    setSlipPreview(null);
+    setTrueMoneyLink("");
+    setSubmitted(false);
+    setError("");
+    onClose();
+  };
+
   return (
-    <Dialog open={!!product} onOpenChange={onClose}>
+    <Dialog open={!!product} onOpenChange={handleClose}>
       <DialogContent className="bg-card border-border max-w-md">
         {submitted ? (
           <motion.div
@@ -219,34 +241,82 @@ function BuyModal({
             animate={{ opacity: 1, scale: 1 }}
             className="flex flex-col items-center gap-4 py-6 text-center"
           >
-            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-              <Shield size={24} className="text-primary" />
+            <div className="w-14 h-14 rounded-full bg-green-500/20 flex items-center justify-center">
+              <span className="text-3xl">✅</span>
             </div>
             <div>
-              <h3 className="font-bold text-lg text-foreground">Payment Submitted</h3>
+              <h3 className="font-bold text-lg text-foreground">ส่งหลักฐานสำเร็จ!</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Our bot will send you access via Telegram DM once approved.
+                แอดมินกำลังตรวจสอบ กรุณารอสักครู่<br />
+                แอดมินจะติดต่อกลับทาง Telegram ของคุณ
               </p>
             </div>
-            <Button variant="outline" onClick={onClose} className="w-full">
-              Close
+            <Button variant="outline" onClick={handleClose} className="w-full">
+              ปิด
             </Button>
           </motion.div>
+        ) : step === "info" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-foreground">{product?.name}</DialogTitle>
+              <p className="text-primary font-bold text-xl">
+                ฿{product ? parseFloat(product.price).toLocaleString() : ""}
+              </p>
+            </DialogHeader>
+
+            <div className="flex flex-col gap-3 mt-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  ชื่อ-นามสกุล *
+                </label>
+                <input
+                  type="text"
+                  placeholder="กรอกชื่อของคุณ"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Telegram Username (สำหรับรับสินค้า)
+                </label>
+                <input
+                  type="text"
+                  placeholder="@username หรือ username ของคุณ"
+                  value={customerTelegram}
+                  onChange={(e) => setCustomerTelegram(e.target.value)}
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                />
+                <p className="text-xs text-muted-foreground">
+                  แอดมินจะส่งลิงก์เข้ากลุ่มให้ทาง Telegram
+                </p>
+              </div>
+
+              {error && <p className="text-red-400 text-sm">{error}</p>}
+
+              <Button
+                onClick={handleNextStep}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
+              >
+                ถัดไป — แนบหลักฐาน
+                <ChevronRight size={14} />
+              </Button>
+            </div>
+          </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle className="text-foreground">
-                {product?.name}
-              </DialogTitle>
-              <p className="text-primary font-bold text-xl">
-                ฿{product ? parseFloat(product.price).toLocaleString() : ""}
+              <DialogTitle className="text-foreground">แนบหลักฐานการชำระเงิน</DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                {product?.name} — ฿{product ? parseFloat(product.price).toLocaleString() : ""}
               </p>
             </DialogHeader>
 
             <Tabs value={paymentType} onValueChange={(v) => setPaymentType(v as "slip" | "truemoney")}>
               <TabsList className="w-full bg-muted">
                 <TabsTrigger value="slip" className="flex-1 gap-2">
-                  <Upload size={14} /> Payment Slip
+                  <Upload size={14} /> สลีปโอนเงิน
                 </TabsTrigger>
                 <TabsTrigger value="truemoney" className="flex-1 gap-2">
                   <Link size={14} /> TrueMoney
@@ -259,11 +329,12 @@ function BuyModal({
                   className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
                 >
                   {slipPreview ? (
-                    <img src={slipPreview} alt="slip" className="max-h-40 mx-auto rounded object-contain" />
+                    <img src={slipPreview} alt="slip" className="max-h-48 mx-auto rounded object-contain" />
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <Upload size={24} />
-                      <span className="text-sm">Click to upload payment slip</span>
+                      <span className="text-sm">แตะเพื่ออัปโหลดสลีป</span>
+                      <span className="text-xs text-muted-foreground/60">รองรับ JPG, PNG</span>
                     </div>
                   )}
                 </div>
@@ -274,28 +345,50 @@ function BuyModal({
                   onChange={handleFileChange}
                   className="hidden"
                 />
+                {slipPreview && (
+                  <button
+                    onClick={() => { setSlipFile(null); setSlipPreview(null); }}
+                    className="mt-2 text-xs text-muted-foreground hover:text-red-400 transition-colors"
+                  >
+                    ✕ เปลี่ยนรูป
+                  </button>
+                )}
               </TabsContent>
 
               <TabsContent value="truemoney" className="mt-4">
-                <input
-                  type="text"
-                  placeholder="https://gift.truemoney.com/..."
-                  value={trueMoneyLink}
-                  onChange={(e) => setTrueMoneyLink(e.target.value)}
-                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                />
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    placeholder="https://gift.truemoney.com/..."
+                    value={trueMoneyLink}
+                    onChange={(e) => setTrueMoneyLink(e.target.value)}
+                    className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    วางลิงก์ซองทรูมันนี่ที่นี่
+                  </p>
+                </div>
               </TabsContent>
             </Tabs>
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
 
-            <Button
-              onClick={handleSubmit}
-              disabled={mutation.isPending}
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
-            >
-              {mutation.isPending ? "Submitting..." : "Submit Payment"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => { setStep("info"); setError(""); }}
+                className="flex-1"
+              >
+                ย้อนกลับ
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={mutation.isPending}
+                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
+              >
+                {mutation.isPending ? "กำลังส่ง..." : "ส่งหลักฐาน"}
+              </Button>
+            </div>
           </>
         )}
       </DialogContent>
@@ -303,120 +396,44 @@ function BuyModal({
   );
 }
 
-function LoginPromptModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Sign in with Telegram</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          You need to sign in with Telegram to make a purchase.
-        </p>
-        <div className="flex justify-center py-2">
-          <TelegramLoginWidget
-            botName={BOT_USERNAME}
-            onAuth={(user) => {
-              fetch("/api/auth/telegram", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(user),
-              })
-                .then((r) => r.json())
-                .then((verified) => {
-                  localStorage.setItem("tg_user", JSON.stringify(verified));
-                  window.location.reload();
-                })
-                .catch(() => {});
-            }}
-          />
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function StoreFront() {
-  const [user, setUser] = useState<TelegramUser | null>(() => {
-    try {
-      const stored = localStorage.getItem("tg_user");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["products"],
     queryFn: () => fetch("/api/products").then((r) => r.json()),
   });
 
-  const handleBuy = (product: Product) => {
-    if (!user) {
-      setShowLoginPrompt(true);
-      return;
-    }
-    setSelectedProduct(product);
-  };
+  const { data: settings } = useQuery<StoreSettings>({
+    queryKey: ["store-settings"],
+    queryFn: () => fetch("/api/store-settings").then((r) => r.json()),
+  });
 
-  const handleLogout = () => {
-    localStorage.removeItem("tg_user");
-    setUser(null);
-  };
+  const storeName = settings?.store_name || "DigitalStore";
+  const heroTitle = settings?.hero_title || "สินค้าดิจิทัลพรีเมียม";
+  const heroSubtitle = settings?.hero_subtitle || "รับสิทธิ์ทันทีผ่าน Telegram — ชำระเงิน รอยืนยัน รับลิงก์";
+  const announcement = settings?.announcement || "";
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b border-border">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap size={18} className="text-primary" />
-            <span className="font-bold text-foreground tracking-tight">DigitalStore</span>
-          </div>
-          <div className="flex items-center gap-3">
-            {user ? (
-              <div className="flex items-center gap-2">
-                {user.photo_url && (
-                  <img src={user.photo_url} alt="" className="w-7 h-7 rounded-full" />
-                )}
-                <span className="text-sm text-muted-foreground hidden sm:block">
-                  {user.first_name}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleLogout}
-                  className="text-muted-foreground hover:text-foreground h-7 w-7 p-0"
-                >
-                  <LogOut size={14} />
-                </Button>
-              </div>
-            ) : (
-              <TelegramLoginWidget
-                botName={BOT_USERNAME}
-                buttonSize="small"
-                onAuth={(u) => {
-                  fetch("/api/auth/telegram", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(u),
-                  })
-                    .then((r) => r.json())
-                    .then((verified) => {
-                      localStorage.setItem("tg_user", JSON.stringify(verified));
-                      setUser(verified);
-                    })
-                    .catch(() => {});
-                }}
-              />
-            )}
+            <span className="font-bold text-foreground tracking-tight">{storeName}</span>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
+      {announcement && (
+        <div className="bg-yellow-500/10 border-b border-yellow-500/30">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-start gap-3">
+            <Megaphone size={16} className="text-yellow-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-yellow-200 whitespace-pre-wrap leading-relaxed">{announcement}</p>
+          </div>
+        </div>
+      )}
+
       <div className="border-b border-border bg-gradient-to-b from-primary/5 to-transparent">
         <div className="max-w-6xl mx-auto px-4 py-12 text-center">
           <motion.h1
@@ -424,7 +441,7 @@ export default function StoreFront() {
             animate={{ opacity: 1, y: 0 }}
             className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight"
           >
-            Premium Digital Products
+            {heroTitle}
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 12 }}
@@ -432,12 +449,11 @@ export default function StoreFront() {
             transition={{ delay: 0.1 }}
             className="text-muted-foreground mt-2 max-w-md mx-auto"
           >
-            Instant access delivered via Telegram. Pay, get approved, receive your link.
+            {heroSubtitle}
           </motion.p>
         </div>
       </div>
 
-      {/* Products */}
       <main className="max-w-6xl mx-auto px-4 py-10">
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -448,7 +464,7 @@ export default function StoreFront() {
         ) : products.length === 0 ? (
           <div className="text-center py-24 text-muted-foreground">
             <ShoppingBag size={36} className="mx-auto mb-3 opacity-40" />
-            <p>No products available yet.</p>
+            <p>ยังไม่มีสินค้าในขณะนี้</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -459,7 +475,7 @@ export default function StoreFront() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
               >
-                <ProductCard product={product} onBuy={handleBuy} />
+                <ProductCard product={product} onBuy={setSelectedProduct} />
               </motion.div>
             ))}
           </div>
@@ -468,12 +484,7 @@ export default function StoreFront() {
 
       <BuyModal
         product={selectedProduct}
-        user={user}
         onClose={() => setSelectedProduct(null)}
-      />
-      <LoginPromptModal
-        open={showLoginPrompt}
-        onClose={() => setShowLoginPrompt(false)}
       />
     </div>
   );

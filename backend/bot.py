@@ -1,4 +1,6 @@
 import logging
+import base64
+import io
 from typing import Optional
 from backend.config import get_settings
 
@@ -35,31 +37,52 @@ async def send_approval_request(
     from telegram.error import TelegramError
 
     bot = get_bot()
-    display_name = customer_first_name or customer_username or str(customer_id)
-    username_str = f"@{customer_username}" if customer_username else "no username"
-    proof_label = "Payment Slip" if payment_type == "slip" else "TrueMoney Link"
+    display_name = customer_first_name or customer_username or (f"ID:{customer_id}" if customer_id else "ไม่ระบุ")
+    username_str = f"@{customer_username}" if customer_username else "ไม่มี username"
+    proof_label = "สลีปโอนเงิน" if payment_type == "slip" else "ลิงก์ TrueMoney"
+    customer_info = f"ID: {customer_id}" if customer_id else "ไม่มี Telegram ID"
 
-    text = (
-        f"New Order #{order_id}\n\n"
-        f"Customer: {display_name} ({username_str})\n"
-        f"Telegram ID: {customer_id}\n"
-        f"Product: {product_name}\n"
-        f"{proof_label}:\n{payment_proof}"
+    caption = (
+        f"🛒 ออเดอร์ใหม่ #{order_id}\n\n"
+        f"👤 ลูกค้า: {display_name}\n"
+        f"📱 Telegram: {username_str}\n"
+        f"🔑 {customer_info}\n"
+        f"📦 สินค้า: {product_name}\n"
+        f"💳 ประเภทการชำระ: {proof_label}"
     )
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Approve", callback_data=f"approve:{order_id}"),
-            InlineKeyboardButton("Reject", callback_data=f"reject:{order_id}"),
+            InlineKeyboardButton("✅ อนุมัติ", callback_data=f"approve:{order_id}"),
+            InlineKeyboardButton("❌ ปฏิเสธ", callback_data=f"reject:{order_id}"),
         ]
     ])
 
     try:
-        msg = await bot.send_message(
-            chat_id=settings.admin_group_id,
-            text=text,
-            reply_markup=keyboard,
-        )
+        if payment_type == "slip" and payment_proof.startswith("data:image"):
+            header, b64data = payment_proof.split(",", 1)
+            image_bytes = base64.b64decode(b64data)
+            photo_file = io.BytesIO(image_bytes)
+            photo_file.name = f"slip_order_{order_id}.jpg"
+            msg = await bot.send_photo(
+                chat_id=settings.admin_group_id,
+                photo=photo_file,
+                caption=caption,
+                reply_markup=keyboard,
+            )
+        elif payment_type == "truemoney":
+            text = caption + f"\n\n🔗 ลิงก์: {payment_proof}"
+            msg = await bot.send_message(
+                chat_id=settings.admin_group_id,
+                text=text,
+                reply_markup=keyboard,
+            )
+        else:
+            msg = await bot.send_message(
+                chat_id=settings.admin_group_id,
+                text=caption + f"\n\n{proof_label}: {payment_proof}",
+                reply_markup=keyboard,
+            )
         return msg.message_id
     except TelegramError as e:
         logger.error(f"Failed to send approval request: {e}")
@@ -69,6 +92,10 @@ async def send_approval_request(
 async def approve_order(order_id: int, customer_id: int, group_ids_str: str) -> bool:
     if not settings.bot_token:
         logger.warning("Bot not configured — skipping customer DM")
+        return False
+
+    if not customer_id:
+        logger.warning(f"No Telegram user_id for order #{order_id} — cannot DM customer")
         return False
 
     from telegram.error import TelegramError
@@ -91,11 +118,11 @@ async def approve_order(order_id: int, customer_id: int, group_ids_str: str) -> 
     if invite_links:
         links_text = "\n".join(f"{link}" for link in invite_links)
         message = (
-            f"Your payment for Order #{order_id} has been approved!\n\n"
-            f"Access links (single-use — do not share):\n\n{links_text}"
+            f"✅ ออเดอร์ #{order_id} ได้รับการอนุมัติแล้ว!\n\n"
+            f"🔗 ลิงก์เข้ากลุ่ม (ใช้ได้ครั้งเดียว — ห้ามแชร์):\n\n{links_text}"
         )
     else:
-        message = f"Your payment for Order #{order_id} has been approved! Contact support for your access links."
+        message = f"✅ ออเดอร์ #{order_id} ได้รับการอนุมัติแล้ว! ติดต่อแอดมินเพื่อรับลิงก์เข้ากลุ่ม"
 
     try:
         await bot.send_message(chat_id=customer_id, text=message)
@@ -109,6 +136,10 @@ async def reject_order(order_id: int, customer_id: int) -> bool:
     if not settings.bot_token:
         return False
 
+    if not customer_id:
+        logger.warning(f"No Telegram user_id for order #{order_id} — cannot DM customer")
+        return False
+
     from telegram.error import TelegramError
     bot = get_bot()
 
@@ -116,8 +147,8 @@ async def reject_order(order_id: int, customer_id: int) -> bool:
         await bot.send_message(
             chat_id=customer_id,
             text=(
-                f"Your payment for Order #{order_id} has been rejected.\n\n"
-                f"Please check your payment details and try again, or contact support."
+                f"❌ ออเดอร์ #{order_id} ไม่ได้รับการอนุมัติ\n\n"
+                f"กรุณาตรวจสอบข้อมูลการชำระเงินแล้วลองใหม่ หรือติดต่อแอดมิน"
             ),
         )
         return True
@@ -138,10 +169,10 @@ async def send_otp(telegram_id: int, otp_code: str) -> bool:
         await bot.send_message(
             chat_id=settings.admin_group_id,
             text=(
-                f"Admin OTP Request\n\n"
-                f"Telegram ID {telegram_id} is requesting admin access.\n\n"
-                f"OTP Code: {otp_code}\n\n"
-                f"Expires in 5 minutes."
+                f"🔐 คำขอเข้าสู่ระบบแอดมิน\n\n"
+                f"Telegram ID: {telegram_id}\n\n"
+                f"รหัส OTP: {otp_code}\n\n"
+                f"⏰ หมดอายุใน 5 นาที"
             ),
         )
         return True
