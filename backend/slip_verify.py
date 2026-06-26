@@ -81,7 +81,29 @@ async def verify_slip(
                 headers={"Authorization": api_key, "Content-Type": "application/json"},
                 json={"payload": {"imageBase64": img_data}},
             )
-            data = resp.json()
+            logger.info(f"Slip2Go HTTP {resp.status_code}")
+
+            # Guard against non-JSON or empty responses (e.g. 401, 403, 5xx HTML pages)
+            raw_text = resp.text.strip()
+            if not raw_text:
+                logger.error(f"Slip2Go returned empty body (HTTP {resp.status_code})")
+                return {**base_result, "success": False, "status": "error",
+                        "error_message": f"Slip2Go ตอบกลับว่างเปล่า (HTTP {resp.status_code}) — ตรวจสอบ API Key ให้ถูกต้อง"}
+
+            try:
+                data = resp.json()
+            except Exception as parse_err:
+                logger.error(f"Slip2Go non-JSON response (HTTP {resp.status_code}): {raw_text[:300]}")
+                # Common causes: wrong key → 401 HTML, IP blocked, wrong endpoint
+                if resp.status_code == 401:
+                    msg = "SLIP2GO_API_KEY ไม่ถูกต้องหรือหมดอายุ (HTTP 401)"
+                elif resp.status_code == 403:
+                    msg = "ไม่มีสิทธิ์เข้าถึง Slip2Go API (HTTP 403)"
+                else:
+                    msg = f"Slip2Go ตอบกลับไม่ใช่ JSON (HTTP {resp.status_code}): {raw_text[:100]}"
+                return {**base_result, "success": False, "status": "error",
+                        "error_message": msg}
+
     except Exception as e:
         logger.error(f"Slip2Go API error: {e}")
         return {**base_result, "success": False, "status": "error",
