@@ -13,6 +13,10 @@ class ProductBase(BaseModel):
     image_urls: Optional[str] = None
     telegram_group_ids: Optional[str] = None
     is_active: bool = True
+    is_featured: bool = False
+    badge_text: Optional[str] = None
+    badge_color: Optional[str] = None
+    sales_count: int = 0
 
 
 class ProductCreate(ProductBase):
@@ -28,10 +32,16 @@ class ProductUpdate(BaseModel):
     image_urls: Optional[str] = None
     telegram_group_ids: Optional[str] = None
     is_active: Optional[bool] = None
+    is_featured: Optional[bool] = None
+    badge_text: Optional[str] = None
+    badge_color: Optional[str] = None
+    sales_count: Optional[int] = None
+    sort_order: Optional[int] = None
 
 
 class ProductResponse(ProductBase):
     id: int
+    sort_order: int = 0
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

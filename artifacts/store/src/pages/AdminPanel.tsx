@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,6 +18,11 @@ interface Product {
   image_urls: string | null;
   telegram_group_ids: string | null;
   is_active: boolean;
+  sort_order: number;
+  is_featured: boolean;
+  badge_text: string | null;
+  badge_color: string | null;
+  sales_count: number;
 }
 
 interface Order {
@@ -87,6 +92,10 @@ function ProductFormModal({
     fake_discount_price: product?.fake_discount_price ?? "",
     telegram_group_ids: product?.telegram_group_ids ?? "",
     is_active: product?.is_active ?? true,
+    is_featured: product?.is_featured ?? false,
+    badge_text: product?.badge_text ?? "แนะนำ",
+    badge_color: product?.badge_color ?? "#f59e0b",
+    sales_count: product?.sales_count ?? 0,
   });
   const [imageUrls, setImageUrls] = useState<string[]>(initialImageUrls.length > 0 ? initialImageUrls : [product?.image_url ?? ""]);
   const [error, setError] = useState("");
@@ -107,6 +116,10 @@ function ProductFormModal({
         image_urls: validUrls.length > 0 ? JSON.stringify(validUrls) : null,
         telegram_group_ids: form.telegram_group_ids || null,
         is_active: form.is_active,
+        is_featured: form.is_featured,
+        badge_text: form.is_featured ? (form.badge_text || "แนะนำ") : null,
+        badge_color: form.is_featured ? (form.badge_color || "#f59e0b") : null,
+        sales_count: form.sales_count,
       };
       const url = isEdit ? `/api/admin/products/${product!.id}` : "/api/admin/products";
       const method = isEdit ? "PUT" : "POST";
@@ -200,12 +213,90 @@ function ProductFormModal({
               onClick={() => setForm((f) => ({ ...f, is_active: !f.is_active }))}
               className={`relative w-10 h-5 rounded-full transition-colors ${form.is_active ? "bg-primary" : "bg-muted-foreground/30"}`}
             >
-              <span
-                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form.is_active ? "translate-x-5" : ""}`}
-              />
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form.is_active ? "translate-x-5" : ""}`} />
             </button>
             <span className="text-sm text-foreground">{form.is_active ? "เปิดขาย" : "ปิดขาย"}</span>
           </div>
+
+          <div className="border border-border rounded-lg p-3 flex flex-col gap-3 bg-muted/20">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, is_featured: !f.is_featured }))}
+                className={`relative w-10 h-5 rounded-full transition-colors ${form.is_featured ? "bg-yellow-500" : "bg-muted-foreground/30"}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form.is_featured ? "translate-x-5" : ""}`} />
+              </button>
+              <Star size={13} className={form.is_featured ? "text-yellow-400" : "text-muted-foreground"} />
+              <span className="text-sm text-foreground font-medium">สินค้าแนะนำ / ยอดนิยม</span>
+            </div>
+            {form.is_featured && (
+              <div className="flex flex-col gap-2 pl-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ข้อความบนป้าย</label>
+                    <input
+                      type="text"
+                      placeholder="เช่น แนะนำ, นิยม, HOT"
+                      value={form.badge_text}
+                      onChange={(e) => setForm((f) => ({ ...f, badge_text: e.target.value }))}
+                      className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">สีกรอบ / ป้าย</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={form.badge_color}
+                        onChange={(e) => setForm((f) => ({ ...f, badge_color: e.target.value }))}
+                        className="w-10 h-9 rounded cursor-pointer border border-border bg-muted p-0.5"
+                      />
+                      <span className="text-xs text-muted-foreground font-mono">{form.badge_color}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-muted-foreground">ตัวอย่างป้าย:</span>
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded text-white"
+                    style={{ backgroundColor: form.badge_color }}
+                  >
+                    {form.badge_text || "แนะนำ"}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ยอดขาย (ครั้ง)</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, sales_count: Math.max(0, f.sales_count - 1) }))}
+                className="w-8 h-8 rounded bg-muted border border-border text-foreground hover:bg-muted-foreground/20 flex items-center justify-center text-lg font-bold"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={0}
+                value={form.sales_count}
+                onChange={(e) => setForm((f) => ({ ...f, sales_count: Math.max(0, parseInt(e.target.value) || 0) }))}
+                className="w-24 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground text-center focus:outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, sales_count: f.sales_count + 1 }))}
+                className="w-8 h-8 rounded bg-muted border border-border text-foreground hover:bg-muted-foreground/20 flex items-center justify-center text-lg font-bold"
+              >
+                +
+              </button>
+              <span className="text-xs text-muted-foreground">แสดงบนหน้าร้านว่า "ซื้อไปแล้ว X ครั้ง"</span>
+            </div>
+          </div>
+
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <Button
             onClick={() => mutation.mutate()}
@@ -239,6 +330,12 @@ function ProductsTab({ token }: { token: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-products"] }),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: ({ id, direction }: { id: number; direction: "up" | "down" }) =>
+      fetch(`/api/admin/products/${id}/move?direction=${direction}`, { method: "POST", headers: authHeaders(token) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-products"] }),
+  });
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -261,13 +358,29 @@ function ProductsTab({ token }: { token: string }) {
         </div>
       ) : (
         <div className="space-y-2">
-          {products.map((p) => (
+          {products.map((p, idx) => (
             <motion.div
               key={p.id}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3 hover:border-primary/30 transition-colors"
+              className={`flex items-center gap-3 bg-card border rounded-lg px-3 py-3 hover:border-primary/30 transition-colors ${p.is_featured ? "border-yellow-500/50" : "border-border"}`}
             >
+              <div className="flex flex-col gap-0.5">
+                <button
+                  onClick={() => moveMutation.mutate({ id: p.id, direction: "up" })}
+                  disabled={idx === 0 || moveMutation.isPending}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ArrowUp size={13} />
+                </button>
+                <button
+                  onClick={() => moveMutation.mutate({ id: p.id, direction: "down" })}
+                  disabled={idx === products.length - 1 || moveMutation.isPending}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ArrowDown size={13} />
+                </button>
+              </div>
               {p.image_url ? (
                 <img src={p.image_url} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
               ) : (
@@ -276,8 +389,21 @@ function ProductsTab({ token }: { token: string }) {
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-foreground text-sm truncate">{p.name}</p>
-                <p className="text-xs text-muted-foreground">฿{parseFloat(p.price).toLocaleString()}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-medium text-foreground text-sm truncate">{p.name}</p>
+                  {p.is_featured && (
+                    <span
+                      className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white shrink-0"
+                      style={{ backgroundColor: p.badge_color || "#f59e0b" }}
+                    >
+                      {p.badge_text || "แนะนำ"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  ฿{parseFloat(p.price).toLocaleString()}
+                  {p.sales_count > 0 && <span className="ml-2 text-muted-foreground/60">· ขายแล้ว {p.sales_count} ครั้ง</span>}
+                </p>
               </div>
               {!p.is_active && (
                 <Badge variant="outline" className="text-xs border-muted text-muted-foreground">
@@ -291,9 +417,7 @@ function ProductsTab({ token }: { token: string }) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    if (confirm(`ลบ "${p.name}"?`)) deleteMutation.mutate(p.id);
-                  }}
+                  onClick={() => { if (confirm(`ลบ "${p.name}"?`)) deleteMutation.mutate(p.id); }}
                   className="h-8 w-8 p-0 text-muted-foreground hover:text-red-400"
                 >
                   <Trash2 size={13} />

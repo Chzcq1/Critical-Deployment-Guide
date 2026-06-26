@@ -71,6 +71,12 @@ async def telegram_webhook(request: Request):
                     order.link_sent = True
                     db.commit()
 
+                from backend.models import Product as ProductModel
+                prod = db.query(ProductModel).filter(ProductModel.id == order.product_id).first()
+                if prod:
+                    prod.sales_count = (prod.sales_count or 0) + 1
+                    db.commit()
+
                 suffix = f"\n\n✅ อนุมัติโดย {admin_name}"
                 if invite_links:
                     suffix += f"\n🔗 ลิงก์เข้ากลุ่มพร้อมแล้ว — ลูกค้าตรวจสอบได้ที่หน้าสถานะออเดอร์"

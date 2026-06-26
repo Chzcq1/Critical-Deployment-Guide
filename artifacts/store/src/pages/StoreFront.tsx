@@ -17,6 +17,11 @@ interface Product {
   image_url: string | null;
   image_urls: string | null;
   is_active: boolean;
+  is_featured: boolean;
+  badge_text: string | null;
+  badge_color: string | null;
+  sales_count: number;
+  sort_order: number;
 }
 
 interface StoreSettings {
@@ -144,6 +149,7 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
   const price = parseFloat(product.price);
   const fakePrice = product.fake_discount_price ? parseFloat(product.fake_discount_price) : null;
   const images = getProductImages(product);
+  const badgeColor = product.badge_color || "#f59e0b";
 
   return (
     <motion.div
@@ -151,8 +157,22 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2 }}
       transition={{ duration: 0.2 }}
-      className="group relative flex flex-col bg-card border border-border rounded-xl overflow-hidden hover:border-primary/40 transition-colors"
+      className="group relative flex flex-col bg-card rounded-xl overflow-hidden transition-all"
+      style={product.is_featured
+        ? { border: `2px solid ${badgeColor}`, boxShadow: `0 0 18px ${badgeColor}28` }
+        : { border: "1px solid hsl(var(--border))" }}
     >
+      {product.is_featured && product.badge_text && (
+        <div className="absolute top-0 right-0 w-[72px] h-[72px] overflow-hidden z-20 pointer-events-none">
+          <div
+            className="absolute top-[18px] right-[-20px] text-[10px] font-bold px-7 py-[3px] rotate-45 text-white shadow-sm tracking-wide"
+            style={{ backgroundColor: badgeColor }}
+          >
+            {product.badge_text}
+          </div>
+        </div>
+      )}
+
       <div className="relative aspect-video bg-muted overflow-hidden">
         {images.length > 0 ? (
           <ImageCarousel images={images} />
@@ -189,6 +209,11 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
               )}
             </div>
             {hasDiscount && <CountdownBadge productId={product.id} />}
+            {product.sales_count > 0 && (
+              <p className="text-xs text-muted-foreground">
+                🛒 ซื้อไปแล้ว <span className="text-foreground font-medium">{product.sales_count.toLocaleString()}</span> ครั้ง
+              </p>
+            )}
           </div>
           <Button
             size="sm"

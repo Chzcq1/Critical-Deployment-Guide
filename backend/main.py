@@ -41,6 +41,14 @@ def _run_migrations(engine):
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20)",
         # image_urls stores JSON array of product image URLs
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls TEXT",
+        # sort_order for manual product ordering
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0",
+        # is_featured + badge fields for highlighting products on storefront
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_text VARCHAR(50)",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_color VARCHAR(20)",
+        # sales_count tracks total approved orders per product
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS sales_count INTEGER NOT NULL DEFAULT 0",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

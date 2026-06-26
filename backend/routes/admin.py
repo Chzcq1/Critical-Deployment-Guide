@@ -108,7 +108,7 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
 
 @router.get("/admin/products", response_model=List[ProductResponse])
 def admin_list_products(db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
-    return db.query(Product).order_by(Product.id.desc()).all()
+    return db.query(Product).order_by(Product.sort_order.asc(), Product.id.asc()).all()
 
 
 @router.post("/admin/products", response_model=ProductResponse, status_code=201)
@@ -142,6 +142,26 @@ def delete_product(product_id: int, db: Session = Depends(get_db), admin: dict =
     return {"message": "Product deleted"}
 
 
+@router.post("/admin/products/{product_id}/move")
+def move_product(product_id: int, direction: str, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    products = db.query(Product).order_by(Product.sort_order.asc(), Product.id.asc()).all()
+    idx = next((i for i, p in enumerate(products) if p.id == product_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if direction == "up" and idx > 0:
+        swap_idx = idx - 1
+    elif direction == "down" and idx < len(products) - 1:
+        swap_idx = idx + 1
+    else:
+        return {"ok": True}
+
+    a, b = products[idx], products[swap_idx]
+    a.sort_order, b.sort_order = swap_idx, idx
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/admin/orders", response_model=List[OrderResponse])
 def list_orders(db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
     return db.query(Order).order_by(Order.id.desc()).all()
@@ -168,8 +188,12 @@ async def admin_approve_order(order_id: int, db: Session = Depends(get_db), admi
                 order.invite_links = json.dumps(invite_links)
                 order.link_sent = True
                 db.commit()
-        except Exception as e:
+        except Exception:
             pass
+
+    if product:
+        product.sales_count = (product.sales_count or 0) + 1
+        db.commit()
 
     db.refresh(order)
     return order

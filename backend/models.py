@@ -15,6 +15,11 @@ class Product(Base):
     image_urls = Column(Text, nullable=True)
     telegram_group_ids = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False, server_default="0")
+    is_featured = Column(Boolean, default=False, nullable=False, server_default="false")
+    badge_text = Column(String(50), nullable=True)
+    badge_color = Column(String(20), nullable=True)
+    sales_count = Column(Integer, default=0, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
