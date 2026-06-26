@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -315,37 +315,41 @@ function ProductsTab({ token }: { token: string }) {
   );
 }
 
+function PaymentTypeBadge({ type }: { type: string }) {
+  if (type === "truemoney") {
+    return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-500/15 text-orange-400 border border-orange-500/30">TrueMoney</span>;
+  }
+  return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30">สลีป</span>;
+}
+
 function OrderProofViewer({ proof, type }: { proof: string | null; type: string }) {
   const [open, setOpen] = useState(false);
-  if (!proof) return <span className="text-muted-foreground text-xs">—</span>;
-  if (type === "truemoney") {
-    return (
-      <a href={proof} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline">
-        ดูลิงก์ <ExternalLink size={10} />
-      </a>
-    );
-  }
-  if (proof.startsWith("data:image")) {
-    return (
-      <>
-        <button
-          onClick={() => setOpen(true)}
-          className="text-primary text-xs flex items-center gap-1 hover:underline cursor-pointer"
-        >
-          ดูสลีป <ExternalLink size={10} />
-        </button>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent className="max-w-lg p-3">
-            <DialogHeader>
-              <DialogTitle className="text-sm">หลักฐานการชำระเงิน</DialogTitle>
-            </DialogHeader>
-            <img src={proof} alt="slip" className="w-full rounded-lg object-contain max-h-[70vh]" />
-          </DialogContent>
-        </Dialog>
-      </>
-    );
-  }
-  return <span className="text-xs text-muted-foreground">{proof.slice(0, 30)}...</span>;
+  return (
+    <div className="flex flex-col gap-1">
+      <PaymentTypeBadge type={type} />
+      {type === "truemoney" && proof ? (
+        <a href={proof} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline">
+          ดูลิงก์ <ExternalLink size={10} />
+        </a>
+      ) : proof && proof.startsWith("data:image") ? (
+        <>
+          <button onClick={() => setOpen(true)} className="text-primary text-xs flex items-center gap-1 hover:underline cursor-pointer">
+            ดูสลีป <ExternalLink size={10} />
+          </button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogContent className="max-w-lg p-3">
+              <DialogHeader>
+                <DialogTitle className="text-sm">หลักฐานการชำระเงิน</DialogTitle>
+              </DialogHeader>
+              <img src={proof} alt="slip" className="w-full rounded-lg object-contain max-h-[70vh]" />
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : !proof ? (
+        <span className="text-muted-foreground text-xs">—</span>
+      ) : null}
+    </div>
+  );
 }
 
 function SetLinksModal({ order, token, onClose }: { order: Order; token: string; onClose: () => void }) {
@@ -414,6 +418,7 @@ function SetLinksModal({ order, token, onClose }: { order: Order; token: string;
 
 function OrdersTab({ token }: { token: string }) {
   const [setLinksOrder, setSetLinksOrder] = useState<Order | null>(null);
+  const qc = useQueryClient();
 
   const { data: orders = [], isLoading } = useQuery<Order[]>({
     queryKey: ["admin-orders"],
@@ -422,13 +427,38 @@ function OrdersTab({ token }: { token: string }) {
     refetchInterval: 30000,
   });
 
+  const approveMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      fetch(`/api/admin/orders/${orderId}/approve`, { method: "POST", headers: authHeaders(token) }).then(async (r) => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "อนุมัติไม่สำเร็จ"); }
+        return r.json();
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-orders"] }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      fetch(`/api/admin/orders/${orderId}/reject`, { method: "POST", headers: authHeaders(token) }).then(async (r) => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "ปฏิเสธไม่สำเร็จ"); }
+        return r.json();
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-orders"] }),
+  });
+
+  const pendingCount = orders.filter((o) => o.status === "pending").length;
+
   return (
     <div>
       {setLinksOrder && (
         <SetLinksModal order={setLinksOrder} token={token} onClose={() => setSetLinksOrder(null)} />
       )}
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3">
         <h2 className="text-sm text-muted-foreground">{orders.length} ออเดอร์</h2>
+        {pendingCount > 0 && (
+          <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2 py-0.5 rounded-full">
+            {pendingCount} รอดำเนินการ
+          </span>
+        )}
       </div>
       {isLoading ? (
         <div className="space-y-2">
@@ -452,52 +482,86 @@ function OrdersTab({ token }: { token: string }) {
                 <th className="px-4 py-3 text-left">หลักฐาน</th>
                 <th className="px-4 py-3 text-left">สถานะ</th>
                 <th className="px-4 py-3 text-left">วันที่</th>
-                <th className="px-4 py-3 text-left">ลิงก์</th>
+                <th className="px-4 py-3 text-left">การดำเนินการ</th>
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
-                <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/10 transition-colors">
-                  <td className="px-4 py-3 font-mono text-muted-foreground">#{o.id}</td>
-                  <td className="px-4 py-3">
-                    <p className="text-foreground font-medium">{o.telegram_first_name || "—"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {o.telegram_username ? `@${o.telegram_username}` : ""}
-                      {o.phone_number ? ` · ${o.phone_number}` : ""}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-foreground">{o.product_name}</td>
-                  <td className="px-4 py-3">
-                    <OrderProofViewer proof={o.payment_proof ?? null} type={o.payment_type} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1">
-                      <StatusBadge status={o.status} />
-                      {o.status === "approved" && (
-                        <span className={`text-xs ${o.link_sent ? "text-green-400" : "text-yellow-400"}`}>
-                          {o.link_sent ? "✓ ส่งลิงก์แล้ว" : "⚠ ยังไม่ได้ส่งลิงก์"}
-                        </span>
+              {orders.map((o) => {
+                const isActing = (approveMutation.isPending && approveMutation.variables === o.id) ||
+                                 (rejectMutation.isPending && rejectMutation.variables === o.id);
+                return (
+                  <tr key={o.id} className={`border-b border-border last:border-0 transition-colors ${o.status === "pending" ? "bg-yellow-500/5 hover:bg-yellow-500/10" : "hover:bg-muted/10"}`}>
+                    <td className="px-4 py-3 font-mono text-muted-foreground">#{o.id}</td>
+                    <td className="px-4 py-3">
+                      <p className="text-foreground font-medium">{o.telegram_first_name || "—"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {o.telegram_username ? `@${o.telegram_username}` : ""}
+                        {o.phone_number ? ` · ${o.phone_number}` : ""}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-foreground">{o.product_name}</td>
+                    <td className="px-4 py-3">
+                      <OrderProofViewer proof={o.payment_proof ?? null} type={o.payment_type} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <StatusBadge status={o.status} />
+                        {o.status === "approved" && (
+                          <span className={`text-xs ${o.link_sent ? "text-green-400" : "text-yellow-400"}`}>
+                            {o.link_sent ? "✓ ส่งลิงก์แล้ว" : "⚠ ยังไม่ได้ส่งลิงก์"}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {o.created_at ? new Date(o.created_at).toLocaleDateString("th-TH") : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {o.status === "pending" ? (
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            disabled={isActing}
+                            onClick={() => approveMutation.mutate(o.id)}
+                            className="text-xs h-7 px-2.5 gap-1 bg-green-600 hover:bg-green-500 text-white border-0"
+                          >
+                            {isActing && approveMutation.variables === o.id
+                              ? <Loader size={11} className="animate-spin" />
+                              : <CheckCircle size={11} />}
+                            อนุมัติ
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isActing}
+                            onClick={() => rejectMutation.mutate(o.id)}
+                            className="text-xs h-7 px-2.5 gap-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                          >
+                            {isActing && rejectMutation.variables === o.id
+                              ? <Loader size={11} className="animate-spin" />
+                              : <XCircle size={11} />}
+                            ปฏิเสธ
+                          </Button>
+                        </div>
+                      ) : o.status === "approved" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSetLinksOrder(o)}
+                          className="text-xs h-7 px-2 gap-1"
+                        >
+                          <ExternalLink size={11} />
+                          {o.invite_links && (() => { try { return JSON.parse(o.invite_links).length > 0; } catch { return false; } })()
+                            ? "แก้ลิงก์"
+                            : "ใส่ลิงก์"}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">
-                    {o.created_at ? new Date(o.created_at).toLocaleDateString("th-TH") : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSetLinksOrder(o)}
-                      className="text-xs h-7 px-2 gap-1"
-                    >
-                      <ExternalLink size={11} />
-                      {o.invite_links && (() => { try { return JSON.parse(o.invite_links).length > 0; } catch { return false; } })()
-                        ? "แก้ลิงก์"
-                        : "ใส่ลิงก์"}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

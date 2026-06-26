@@ -1,4 +1,5 @@
 import os
+import json
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -144,6 +145,48 @@ def delete_product(product_id: int, db: Session = Depends(get_db), admin: dict =
 @router.get("/admin/orders", response_model=List[OrderResponse])
 def list_orders(db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
     return db.query(Order).order_by(Order.id.desc()).all()
+
+
+@router.post("/admin/orders/{order_id}/approve", response_model=OrderResponse)
+async def admin_approve_order(order_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail=f"ออเดอร์นี้มีสถานะ '{order.status}' แล้ว")
+
+    order.status = "approved"
+    db.commit()
+
+    product = db.query(Product).filter(Product.id == order.product_id).first()
+    group_ids_str = (product.telegram_group_ids or "") if product else ""
+
+    if group_ids_str:
+        try:
+            invite_links = await bot_module.generate_invite_links(order.id, group_ids_str)
+            if invite_links:
+                order.invite_links = json.dumps(invite_links)
+                order.link_sent = True
+                db.commit()
+        except Exception as e:
+            pass
+
+    db.refresh(order)
+    return order
+
+
+@router.post("/admin/orders/{order_id}/reject", response_model=OrderResponse)
+def admin_reject_order(order_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail=f"ออเดอร์นี้มีสถานะ '{order.status}' แล้ว")
+
+    order.status = "rejected"
+    db.commit()
+    db.refresh(order)
+    return order
 
 
 def _build_settings_response(db: Session) -> StoreSettingsResponse:
