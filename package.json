@@ -9,6 +9,9 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "sharp", "@swc/core", "canvas", "sqlite3", "better-sqlite3"]
+  },
   "devDependencies": {
     "prettier": "^3.8.4",
     "typescript": "~5.9.3"

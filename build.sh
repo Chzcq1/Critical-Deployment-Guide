@@ -7,11 +7,11 @@ echo "--- Installing Python dependencies ---"
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "--- Installing pnpm in /tmp (Render filesystem-safe) ---"
+echo "--- Installing pnpm 9 in /tmp (Render filesystem-safe) ---"
 mkdir -p /tmp/pnpm-env
 cd /tmp/pnpm-env
 npm init --yes > /dev/null
-npm install pnpm > /dev/null
+npm install pnpm@9 > /dev/null
 export PATH="/tmp/pnpm-env/node_modules/.bin:$PATH"
 
 echo "--- Building React frontend ---"
