@@ -21,6 +21,9 @@ SETTING_DEFAULTS = {
     "announcement": "",
     "store_name": "DigitalStore",
     "bot_username": "",
+    "bank_name": "",
+    "bank_account": "",
+    "bank_qr_url": "",
 }
 
 
@@ -50,6 +53,12 @@ def _set_setting(db: Session, key: str, value: str):
 
 @router.post("/admin/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
+    allowed_ids_raw = settings.admin_telegram_ids
+    if allowed_ids_raw:
+        allowed_ids = [int(x.strip()) for x in allowed_ids_raw.split(",") if x.strip().lstrip("-").isdigit()]
+        if body.telegram_id not in allowed_ids:
+            raise HTTPException(status_code=403, detail="Telegram ID นี้ไม่มีสิทธิ์เข้าระบบแอดมิน")
+
     otp = generate_otp()
     expires = datetime.utcnow() + timedelta(minutes=5)
     session = OTPSession(
@@ -138,6 +147,9 @@ def _build_settings_response(db: Session) -> StoreSettingsResponse:
         announcement=_get_setting(db, "announcement"),
         store_name=_get_setting(db, "store_name"),
         bot_username=_get_setting(db, "bot_username"),
+        bank_name=_get_setting(db, "bank_name"),
+        bank_account=_get_setting(db, "bank_account"),
+        bank_qr_url=_get_setting(db, "bank_qr_url"),
     )
 
 

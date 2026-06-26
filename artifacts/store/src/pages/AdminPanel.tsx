@@ -15,6 +15,7 @@ interface Product {
   price: string;
   fake_discount_price: string | null;
   image_url: string | null;
+  image_urls: string | null;
   telegram_group_ids: string | null;
   is_active: boolean;
 }
@@ -40,6 +41,9 @@ interface StoreSettings {
   announcement: string;
   store_name: string;
   bot_username: string;
+  bank_name: string;
+  bank_account: string;
+  bank_qr_url: string;
 }
 
 function authHeaders(token: string) {
@@ -70,25 +74,37 @@ function ProductFormModal({
 }) {
   const qc = useQueryClient();
   const isEdit = !!product;
+
+  let initialImageUrls: string[] = [];
+  try {
+    if (product?.image_urls) initialImageUrls = JSON.parse(product.image_urls);
+  } catch {}
+
   const [form, setForm] = useState({
     name: product?.name ?? "",
     description: product?.description ?? "",
     price: product?.price ?? "",
     fake_discount_price: product?.fake_discount_price ?? "",
-    image_url: product?.image_url ?? "",
     telegram_group_ids: product?.telegram_group_ids ?? "",
     is_active: product?.is_active ?? true,
   });
+  const [imageUrls, setImageUrls] = useState<string[]>(initialImageUrls.length > 0 ? initialImageUrls : [product?.image_url ?? ""]);
   const [error, setError] = useState("");
+
+  const addImageUrl = () => setImageUrls((prev) => [...prev, ""]);
+  const removeImageUrl = (i: number) => setImageUrls((prev) => prev.filter((_, idx) => idx !== i));
+  const updateImageUrl = (i: number, val: string) => setImageUrls((prev) => prev.map((u, idx) => idx === i ? val : u));
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const validUrls = imageUrls.map((u) => u.trim()).filter(Boolean);
       const body = {
         name: form.name,
         description: form.description || null,
         price: parseFloat(form.price),
         fake_discount_price: form.fake_discount_price ? parseFloat(form.fake_discount_price) : null,
-        image_url: form.image_url || null,
+        image_url: validUrls[0] || null,
+        image_urls: validUrls.length > 0 ? JSON.stringify(validUrls) : null,
         telegram_group_ids: form.telegram_group_ids || null,
         is_active: form.is_active,
       };
@@ -140,7 +156,40 @@ function ProductFormModal({
             {field("ราคา (฿) *", "price", "500", "number")}
             {field("ราคาเดิม (฿)", "fake_discount_price", "799", "number")}
           </div>
-          {field("URL รูปภาพ", "image_url", "https://...")}
+
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                รูปภาพสินค้า ({imageUrls.filter(u => u.trim()).length} ภาพ)
+              </label>
+              <button type="button" onClick={addImageUrl}
+                className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 font-medium">
+                <Plus size={12} /> เพิ่มรูป
+              </button>
+            </div>
+            {imageUrls.map((url, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  placeholder={`URL รูปภาพที่ ${i + 1}`}
+                  value={url}
+                  onChange={(e) => updateImageUrl(i, e.target.value)}
+                  className="flex-1 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                />
+                {url.trim() && (
+                  <img src={url} alt="" className="w-8 h-8 rounded object-cover shrink-0 border border-border" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                )}
+                {imageUrls.length > 1 && (
+                  <button type="button" onClick={() => removeImageUrl(i)}
+                    className="text-muted-foreground hover:text-red-400 transition-colors shrink-0">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">รูปแรกจะเป็นรูปหลัก รูปที่เหลือสลับได้ในการ์ดสินค้า</p>
+          </div>
+
           {field("Telegram Group IDs", "telegram_group_ids", "-100123456789,-100987654321")}
           <p className="text-xs text-muted-foreground -mt-1">
             คั่นด้วยคอมมาสำหรับหลายกลุ่ม บอตจะสร้างลิงก์เชิญใช้ครั้งเดียวให้แต่ละกลุ่ม
@@ -458,6 +507,9 @@ function SettingsTab({ token }: { token: string }) {
     hero_subtitle: "",
     announcement: "",
     bot_username: "",
+    bank_name: "",
+    bank_account: "",
+    bank_qr_url: "",
   });
 
   const [initialized, setInitialized] = useState(false);
@@ -550,6 +602,46 @@ function SettingsTab({ token }: { token: string }) {
             placeholder="รับสิทธิ์ทันทีผ่าน Telegram..."
             className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
           />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 bg-card border border-primary/20 rounded-xl p-5">
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-foreground text-sm">💳 ข้อมูลการชำระเงิน</h3>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">แสดงให้ลูกค้าเห็นตอนกดชำระเงิน (ชื่อธนาคาร เลขบัญชี และ QR Code)</p>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อธนาคาร / ชื่อบัญชี</label>
+          <input
+            type="text"
+            value={form.bank_name}
+            onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))}
+            placeholder="เช่น กสิกรไทย — นายสมชาย ใจดี"
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">เลขบัญชี</label>
+          <input
+            type="text"
+            value={form.bank_account}
+            onChange={(e) => setForm((f) => ({ ...f, bank_account: e.target.value }))}
+            placeholder="เช่น 123-4-56789-0"
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">URL รูป QR Code (ถ้ามี)</label>
+          <input
+            type="text"
+            value={form.bank_qr_url}
+            onChange={(e) => setForm((f) => ({ ...f, bank_qr_url: e.target.value }))}
+            placeholder="https://..."
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+          {form.bank_qr_url && (
+            <img src={form.bank_qr_url} alt="QR Preview" className="mt-2 w-24 h-24 rounded-lg border border-border object-contain bg-white" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          )}
         </div>
       </div>
 

@@ -39,6 +39,8 @@ def _run_migrations(engine):
         "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
         # phone_number for order lookup without order ID
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20)",
+        # image_urls stores JSON array of product image URLs
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls TEXT",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

@@ -12,6 +12,7 @@ class Product(Base):
     price = Column(Numeric(10, 2), nullable=False)
     fake_discount_price = Column(Numeric(10, 2), nullable=True)
     image_url = Column(String(500), nullable=True)
+    image_urls = Column(Text, nullable=True)
     telegram_group_ids = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

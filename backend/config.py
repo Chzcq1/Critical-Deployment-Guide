@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     bot_username: Optional[str] = Field(default=None)
     webhook_url: Optional[str] = Field(default=None)
     secret_key: str = Field(default="changeme-please-set-a-real-secret-key-32chars")
+    admin_telegram_ids: Optional[str] = Field(default=None)
 
     class Config:
         env_file = ".env"

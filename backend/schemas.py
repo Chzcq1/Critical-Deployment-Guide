@@ -10,6 +10,7 @@ class ProductBase(BaseModel):
     price: Decimal
     fake_discount_price: Optional[Decimal] = None
     image_url: Optional[str] = None
+    image_urls: Optional[str] = None
     telegram_group_ids: Optional[str] = None
     is_active: bool = True
 
@@ -24,6 +25,7 @@ class ProductUpdate(BaseModel):
     price: Optional[Decimal] = None
     fake_discount_price: Optional[Decimal] = None
     image_url: Optional[str] = None
+    image_urls: Optional[str] = None
     telegram_group_ids: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -108,6 +110,9 @@ class StoreSettingsUpdate(BaseModel):
     announcement: Optional[str] = None
     store_name: Optional[str] = None
     bot_username: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account: Optional[str] = None
+    bank_qr_url: Optional[str] = None
 
 
 class StoreSettingsResponse(BaseModel):
@@ -116,6 +121,9 @@ class StoreSettingsResponse(BaseModel):
     announcement: str
     store_name: str
     bot_username: str
+    bank_name: str
+    bank_account: str
+    bank_qr_url: str
 
 
 class AnnouncementCreate(BaseModel):

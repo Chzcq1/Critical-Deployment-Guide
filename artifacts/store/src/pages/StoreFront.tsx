@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ShoppingBag, Upload, Link, Clock, ChevronRight, Zap, Megaphone, Search, CheckCircle, XCircle, Loader } from "lucide-react";
+import { ShoppingBag, Upload, Link, Clock, ChevronRight, ChevronLeft, Zap, Megaphone, Search, CheckCircle, XCircle, Loader, Building2, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ interface Product {
   price: string;
   fake_discount_price: string | null;
   image_url: string | null;
+  image_urls: string | null;
   is_active: boolean;
 }
 
@@ -24,6 +25,60 @@ interface StoreSettings {
   announcement: string;
   store_name: string;
   bot_username: string;
+  bank_name: string;
+  bank_account: string;
+  bank_qr_url: string;
+}
+
+function getProductImages(product: Product): string[] {
+  if (product.image_urls) {
+    try {
+      const parsed = JSON.parse(product.image_urls);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {}
+  }
+  if (product.image_url) return [product.image_url];
+  return [];
+}
+
+function ImageCarousel({ images, aspectClass = "aspect-video" }: { images: string[]; aspectClass?: string }) {
+  const [current, setCurrent] = useState(0);
+  if (images.length === 0) return null;
+  return (
+    <div className={`relative ${aspectClass} bg-muted overflow-hidden`}>
+      <img
+        src={images[current]}
+        alt=""
+        className="w-full h-full object-cover transition-opacity duration-300"
+        key={current}
+      />
+      {images.length > 1 && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); setCurrent((c) => (c - 1 + images.length) % images.length); }}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition-colors"
+          >
+            <ChevronLeft size={14} className="text-white" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setCurrent((c) => (c + 1) % images.length); }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition-colors"
+          >
+            <ChevronRight size={14} className="text-white" />
+          </button>
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+            {images.map((_, i) => (
+              <button
+                key={i}
+                onClick={(e) => { e.stopPropagation(); setCurrent(i); }}
+                className={`rounded-full transition-all ${i === current ? "w-4 h-1.5 bg-white" : "w-1.5 h-1.5 bg-white/50"}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 interface OrderStatus {
@@ -88,6 +143,7 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
   const hasDiscount = product.fake_discount_price != null;
   const price = parseFloat(product.price);
   const fakePrice = product.fake_discount_price ? parseFloat(product.fake_discount_price) : null;
+  const images = getProductImages(product);
 
   return (
     <motion.div
@@ -98,19 +154,15 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
       className="group relative flex flex-col bg-card border border-border rounded-xl overflow-hidden hover:border-primary/40 transition-colors"
     >
       <div className="relative aspect-video bg-muted overflow-hidden">
-        {product.image_url ? (
-          <img
-            src={product.image_url}
-            alt={product.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
+        {images.length > 0 ? (
+          <ImageCarousel images={images} />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <Zap size={32} className="text-primary/30" />
           </div>
         )}
         {hasDiscount && (
-          <div className="absolute top-2 left-2">
+          <div className="absolute top-2 left-2 z-10">
             <Badge className="bg-red-600 text-white text-xs border-0">SALE</Badge>
           </div>
         )}
@@ -155,11 +207,17 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
 function BuyModal({
   product,
   botUsername,
+  bankName,
+  bankAccount,
+  bankQrUrl,
   onClose,
   onSuccess,
 }: {
   product: Product | null;
   botUsername: string;
+  bankName: string;
+  bankAccount: string;
+  bankQrUrl: string;
   onClose: () => void;
   onSuccess: (orderId: number, customerName: string, phone: string) => void;
 }) {
@@ -326,6 +384,34 @@ function BuyModal({
                 {product?.name} — ฿{product ? parseFloat(product.price).toLocaleString() : ""}
               </p>
             </DialogHeader>
+            {(bankName || bankAccount || bankQrUrl) && (
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex flex-col gap-3">
+                <p className="text-xs font-semibold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Building2 size={12} /> ข้อมูลการโอนเงิน
+                </p>
+                <div className="flex gap-4 items-start">
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    {bankName && (
+                      <div className="flex items-center gap-2">
+                        <Building2 size={13} className="text-muted-foreground shrink-0" />
+                        <span className="text-sm text-foreground font-medium">{bankName}</span>
+                      </div>
+                    )}
+                    {bankAccount && (
+                      <div className="flex items-center gap-2">
+                        <CreditCard size={13} className="text-muted-foreground shrink-0" />
+                        <span className="text-sm font-mono text-foreground tracking-wider">{bankAccount}</span>
+                      </div>
+                    )}
+                  </div>
+                  {bankQrUrl && (
+                    <div className="shrink-0">
+                      <img src={bankQrUrl} alt="QR Code" className="w-20 h-20 rounded-lg border border-border object-contain bg-white" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <Tabs value={paymentType} onValueChange={(v) => setPaymentType(v as "slip" | "truemoney")}>
               <TabsList className="w-full bg-muted">
                 <TabsTrigger value="slip" className="flex-1 gap-2"><Upload size={14} /> สลีปโอนเงิน</TabsTrigger>
@@ -606,11 +692,31 @@ export default function StoreFront() {
     queryFn: () => fetch("/api/store-settings").then((r) => r.json()),
   });
 
+  const { data: announcements = [] } = useQuery<{ id: number }[]>({
+    queryKey: ["announcements"],
+    queryFn: () => fetch("/api/announcements").then((r) => r.json()),
+  });
+
+  const [seenIds, setSeenIds] = useState<number[]>(() => {
+    try { return JSON.parse(localStorage.getItem("seen_announcements") || "[]"); } catch { return []; }
+  });
+
+  const hasUnread = announcements.some((a) => !seenIds.includes(a.id));
+
+  const markAllSeen = () => {
+    const ids = announcements.map((a) => a.id);
+    setSeenIds(ids);
+    localStorage.setItem("seen_announcements", JSON.stringify(ids));
+  };
+
   const storeName = settings?.store_name || "DigitalStore";
   const heroTitle = settings?.hero_title || "สินค้าดิจิทัลพรีเมียม";
   const heroSubtitle = settings?.hero_subtitle || "รับสิทธิ์ทันทีผ่าน Telegram — ชำระเงิน รอยืนยัน รับลิงก์";
   const announcement = settings?.announcement || "";
   const botUsername = settings?.bot_username || "";
+  const bankName = settings?.bank_name || "";
+  const bankAccount = settings?.bank_account || "";
+  const bankQrUrl = settings?.bank_qr_url || "";
 
   const handleBuySuccess = (orderId: number, name: string, phone: string) => {
     setCheckOrderId(orderId);
@@ -631,10 +737,13 @@ export default function StoreFront() {
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setLocation("/announcements")}
-              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+              onClick={() => { markAllSeen(); setLocation("/announcements"); }}
+              className="relative text-muted-foreground hover:text-foreground gap-1.5 text-xs"
             >
               <Megaphone size={13} /> ประกาศ
+              {hasUnread && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 border border-background" />
+              )}
             </Button>
             <Button
               size="sm"
@@ -712,6 +821,9 @@ export default function StoreFront() {
       <BuyModal
         product={selectedProduct}
         botUsername={botUsername}
+        bankName={bankName}
+        bankAccount={bankAccount}
+        bankQrUrl={bankQrUrl}
         onClose={() => setSelectedProduct(null)}
         onSuccess={handleBuySuccess}
       />
