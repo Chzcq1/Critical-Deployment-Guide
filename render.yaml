@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: digital-product-store
+    runtime: python
+    buildCommand: >
+      pip install uv &&
+      uv pip install --system -r backend/requirements.txt &&
+      npm install -g pnpm &&
+      pnpm install &&
+      BASE_PATH=/ pnpm --filter @workspace/store run build
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_GROUP_ID
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: VITE_BOT_USERNAME
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.12.0"
