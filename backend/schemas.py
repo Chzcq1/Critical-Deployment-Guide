@@ -79,11 +79,10 @@ class OrderLinksUpdate(BaseModel):
 
 
 class OTPRequest(BaseModel):
-    telegram_id: int
+    passcode: str
 
 
 class OTPVerify(BaseModel):
-    telegram_id: int
     otp_code: str
 
 

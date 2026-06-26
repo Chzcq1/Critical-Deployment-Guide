@@ -52,25 +52,25 @@ def _set_setting(db: Session, key: str, value: str):
         db.add(row)
 
 
+ADMIN_SESSION_ID = 0  # fixed placeholder — no Telegram ID needed
+
+
 @router.post("/admin/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
-    allowed_ids_raw = settings.admin_telegram_ids
-    if allowed_ids_raw:
-        allowed_ids = [int(x.strip()) for x in allowed_ids_raw.split(",") if x.strip().lstrip("-").isdigit()]
-        if body.telegram_id not in allowed_ids:
-            raise HTTPException(status_code=403, detail="Telegram ID นี้ไม่มีสิทธิ์เข้าระบบแอดมิน")
+    if body.passcode != settings.secret_key:
+        raise HTTPException(status_code=403, detail="รหัสผ่านไม่ถูกต้อง")
 
     otp = generate_otp()
     expires = datetime.utcnow() + timedelta(minutes=5)
     session = OTPSession(
-        telegram_id=body.telegram_id,
+        telegram_id=ADMIN_SESSION_ID,
         otp_code=otp,
         expires_at=expires,
     )
     db.add(session)
     db.commit()
 
-    sent, err_msg = await bot_module.send_otp(body.telegram_id, otp)
+    sent, err_msg = await bot_module.send_otp(ADMIN_SESSION_ID, otp)
     if not sent:
         raise HTTPException(status_code=500, detail=f"ส่ง OTP ไม่สำเร็จ: {err_msg}")
 
@@ -82,7 +82,7 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     session = (
         db.query(OTPSession)
         .filter(
-            OTPSession.telegram_id == body.telegram_id,
+            OTPSession.telegram_id == ADMIN_SESSION_ID,
             OTPSession.otp_code == body.otp_code,
             OTPSession.is_used == False,
             OTPSession.expires_at > datetime.utcnow(),

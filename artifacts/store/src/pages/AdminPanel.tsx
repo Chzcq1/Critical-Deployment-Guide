@@ -674,25 +674,25 @@ function SettingsTab({ token }: { token: string }) {
 }
 
 function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
-  const [step, setStep] = useState<"telegram-id" | "otp">("telegram-id");
-  const [telegramId, setTelegramId] = useState("");
+  const [step, setStep] = useState<"passcode" | "otp">("passcode");
+  const [passcode, setPasscode] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
   const requestOtp = async () => {
-    const id = parseInt(telegramId);
-    if (!id) { setError("กรุณากรอก Telegram ID ที่ถูกต้อง"); return; }
+    if (!passcode) { setError("กรุณากรอกรหัสผ่าน"); return; }
     setLoading(true);
     setError("");
     const res = await fetch("/api/admin/request-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ telegram_id: id }),
+      body: JSON.stringify({ passcode }),
     });
     setLoading(false);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      setError(errData.detail || "ส่ง OTP ไม่สำเร็จ ตรวจสอบการตั้งค่าบอต");
+      setError(errData.detail || "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง");
       return;
     }
     setStep("otp");
@@ -704,7 +704,7 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
     const res = await fetch("/api/admin/verify-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ telegram_id: parseInt(telegramId), otp_code: otp }),
+      body: JSON.stringify({ otp_code: otp }),
     });
     setLoading(false);
     if (!res.ok) { setError("OTP ไม่ถูกต้องหรือหมดอายุ"); return; }
@@ -725,37 +725,29 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
           <span className="font-bold text-foreground">เข้าสู่ระบบแอดมิน</span>
         </div>
 
-        {step === "telegram-id" ? (
+        {step === "passcode" ? (
           <div className="flex flex-col gap-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
-                Telegram ID ของคุณ
+                รหัสผ่านแอดมิน
               </label>
               <input
-                type="number"
-                placeholder="123456789"
-                value={telegramId}
-                onChange={(e) => setTelegramId(e.target.value)}
+                type="password"
+                placeholder="••••••••"
+                value={passcode}
+                onChange={(e) => setPasscode(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && requestOtp()}
                 className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               />
-              <p className="text-xs text-muted-foreground mt-1.5">OTP จะถูกส่งไปที่กลุ่มแอดมิน</p>
+              <p className="text-xs text-muted-foreground mt-1.5">ระบบจะส่ง OTP ไปที่กลุ่ม Telegram แอดมิน</p>
             </div>
-            <a
-              href="https://t.me/userinfobot"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
-            >
-              <ExternalLink size={11} /> ไม่รู้ ID? เปิด @userinfobot ใน Telegram แล้วกด Start
-            </a>
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <Button
               onClick={requestOtp}
               disabled={loading}
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-1"
             >
-              {loading ? "กำลังส่ง..." : <>ส่ง OTP <ChevronRight size={14} /></>}
+              {loading ? "กำลังส่ง OTP..." : <>ส่ง OTP <ChevronRight size={14} /></>}
             </Button>
           </div>
         ) : (
