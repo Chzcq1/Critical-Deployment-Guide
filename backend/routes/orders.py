@@ -1,10 +1,11 @@
-import asyncio
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import Order, Product
-from backend.schemas import OrderSubmit, OrderResponse, OrderStatusResponse
+from backend.schemas import OrderSubmit, OrderResponse, OrderStatusResponse, OrderLinksUpdate
 from backend import bot as bot_module
+from backend.routes.admin import get_admin
 
 router = APIRouter()
 
@@ -32,6 +33,7 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
         telegram_user_id=payload.telegram_user_id or None,
         telegram_username=payload.telegram_username,
         telegram_first_name=payload.telegram_first_name,
+        phone_number=payload.phone_number or None,
         product_id=payload.product_id,
         product_name=product.name,
         payment_proof=payload.payment_proof,
@@ -54,19 +56,68 @@ async def submit_order(payload: OrderSubmit, db: Session = Depends(get_db)):
     return order
 
 
+@router.get("/orders/by-phone", response_model=list[OrderStatusResponse])
+def lookup_by_phone(
+    phone: str = Query(..., description="Phone number"),
+    db: Session = Depends(get_db),
+):
+    phone_clean = phone.strip().replace("-", "").replace(" ", "")
+    if len(phone_clean) < 9:
+        raise HTTPException(status_code=400, detail="กรุณากรอกเบอร์โทรให้ครบ")
+    orders = (
+        db.query(Order)
+        .filter(Order.phone_number.ilike(f"%{phone_clean}%"))
+        .order_by(Order.id.desc())
+        .limit(10)
+        .all()
+    )
+    return orders
+
+
 @router.get("/orders/{order_id}/status", response_model=OrderStatusResponse)
 def get_order_status(
     order_id: int,
-    name: str = Query(..., description="Customer name used when placing the order"),
+    name: str = Query(default=""),
+    phone: str = Query(default=""),
     db: Session = Depends(get_db),
 ):
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="ไม่พบออเดอร์นี้")
 
-    submitted_name = (name or "").strip().lower()
+    name_clean = (name or "").strip().lower()
+    phone_clean = (phone or "").strip().replace("-", "").replace(" ", "")
     stored_name = (order.telegram_first_name or "").strip().lower()
-    if submitted_name != stored_name:
-        raise HTTPException(status_code=403, detail="ชื่อไม่ตรงกับออเดอร์นี้")
+    stored_phone = (order.phone_number or "").strip().replace("-", "").replace(" ", "")
+
+    if not name_clean and not phone_clean:
+        raise HTTPException(status_code=400, detail="กรุณากรอกชื่อหรือเบอร์โทรเพื่อยืนยัน")
+
+    verified = False
+    if name_clean and name_clean == stored_name:
+        verified = True
+    if phone_clean and stored_phone and phone_clean == stored_phone:
+        verified = True
+
+    if not verified:
+        raise HTTPException(status_code=403, detail="ชื่อหรือเบอร์โทรไม่ตรงกับออเดอร์นี้")
 
     return order
+
+
+@router.put("/admin/orders/{order_id}/links")
+def admin_set_links(
+    order_id: int,
+    body: OrderLinksUpdate,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(get_admin),
+):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    order.invite_links = json.dumps(body.invite_links)
+    order.link_sent = True
+    if order.status != "approved":
+        order.status = "approved"
+    db.commit()
+    return {"ok": True, "invite_links": body.invite_links}

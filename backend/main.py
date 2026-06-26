@@ -37,6 +37,8 @@ def _run_migrations(engine):
         "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS images TEXT",
         "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS font_size VARCHAR(10) NOT NULL DEFAULT 'base'",
         "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+        # phone_number for order lookup without order ID
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20)",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

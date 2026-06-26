@@ -49,6 +49,7 @@ class OrderSubmit(BaseModel):
     telegram_user_id: Optional[int] = None
     telegram_username: Optional[str] = None
     telegram_first_name: Optional[str] = None
+    phone_number: Optional[str] = None
     product_id: int
     payment_proof: str
     payment_type: str = "slip"
@@ -59,6 +60,7 @@ class OrderResponse(BaseModel):
     telegram_user_id: Optional[int] = None
     telegram_username: Optional[str] = None
     telegram_first_name: Optional[str] = None
+    phone_number: Optional[str] = None
     product_id: int
     product_name: str
     payment_type: str
@@ -68,6 +70,10 @@ class OrderResponse(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class OrderLinksUpdate(BaseModel):
+    invite_links: list[str]
 
 
 class OTPRequest(BaseModel):

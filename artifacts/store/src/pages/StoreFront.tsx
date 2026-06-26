@@ -161,10 +161,11 @@ function BuyModal({
   product: Product | null;
   botUsername: string;
   onClose: () => void;
-  onSuccess: (orderId: number, customerName: string) => void;
+  onSuccess: (orderId: number, customerName: string, phone: string) => void;
 }) {
   const [step, setStep] = useState<"info" | "payment">("info");
   const [customerName, setCustomerName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [paymentType, setPaymentType] = useState<"slip" | "truemoney">("slip");
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
@@ -194,6 +195,7 @@ function BuyModal({
           telegram_user_id: null,
           telegram_username: null,
           telegram_first_name: customerName,
+          phone_number: phoneNumber.trim() || null,
           product_id: product.id,
           payment_proof: paymentProof,
           payment_type: paymentType,
@@ -230,7 +232,7 @@ function BuyModal({
   };
 
   const handleClose = () => {
-    setStep("info"); setCustomerName("");
+    setStep("info"); setCustomerName(""); setPhoneNumber("");
     setSlipFile(null); setSlipPreview(null); setTrueMoneyLink("");
     setSubmitted(false); setOrderId(null); setError("");
     onClose();
@@ -239,7 +241,7 @@ function BuyModal({
   const handleCheckStatus = () => {
     if (orderId !== null) {
       handleClose();
-      onSuccess(orderId, customerName);
+      onSuccess(orderId, customerName, phoneNumber);
     }
   };
 
@@ -293,6 +295,19 @@ function BuyModal({
                   placeholder="กรอกชื่อของคุณ"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleNextStep()}
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  เบอร์โทรศัพท์ <span className="text-muted-foreground/50 normal-case">(สำหรับค้นหาออเดอร์หากลืมชื่อ)</span>
+                </label>
+                <input
+                  type="tel"
+                  placeholder="0812345678"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleNextStep()}
                   className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                 />
@@ -365,73 +380,139 @@ function BuyModal({
   );
 }
 
-function OrderStatusModal({ open, initialOrderId, initialName, onClose }: {
+function InviteLinksList({ inviteLinks }: { inviteLinks: string }) {
+  let links: string[] = [];
+  try { links = JSON.parse(inviteLinks); } catch {}
+  if (links.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-semibold text-green-300 flex items-center gap-1.5">
+        <CheckCircle size={15} /> ลิงก์เข้ากลุ่มพร้อมแล้ว!
+      </p>
+      <p className="text-xs text-muted-foreground">กดลิงก์ด้านล่างเพื่อเข้ากลุ่ม (ใช้ได้ครั้งเดียว ห้ามแชร์)</p>
+      {links.map((link, i) => (
+        <a key={i} href={link} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 bg-[#229ED9]/15 border border-[#229ED9]/40 hover:border-[#229ED9] rounded-lg px-4 py-3 transition-colors">
+          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#229ED9] shrink-0">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.29 13.91l-2.957-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.855.649z" />
+          </svg>
+          <span className="text-[#229ED9] font-medium text-sm">
+            {links.length > 1 ? `เข้ากลุ่มที่ ${i + 1}` : "กดเพื่อเข้ากลุ่ม Telegram"}
+          </span>
+          <ChevronRight size={14} className="ml-auto text-[#229ED9]" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function OrderStatusCard({ result }: { result: OrderStatus }) {
+  const statusConfig: Record<string, { icon: React.ReactNode; label: string; color: string; bg: string; desc: string }> = {
+    pending: { icon: <Loader size={28} className="animate-spin text-yellow-400" />, label: "รอการยืนยัน", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30", desc: "แอดมินกำลังตรวจสอบหลักฐานการชำระเงิน กรุณารอสักครู่" },
+    approved: { icon: <CheckCircle size={28} className="text-green-400" />, label: "อนุมัติแล้ว", color: "text-green-400", bg: "bg-green-500/10 border-green-500/30", desc: "" },
+    rejected: { icon: <XCircle size={28} className="text-red-400" />, label: "ไม่ได้รับการอนุมัติ", color: "text-red-400", bg: "bg-red-500/10 border-red-500/30", desc: "กรุณาติดต่อแอดมินหากคิดว่าเกิดข้อผิดพลาด" },
+  };
+  const cfg = statusConfig[result.status] ?? statusConfig.pending;
+  const hasLinks = result.invite_links && (() => { try { return JSON.parse(result.invite_links!).length > 0; } catch { return false; } })();
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className={`border rounded-xl p-4 flex flex-col gap-3 ${cfg.bg}`}>
+      <div className="flex items-center gap-3">
+        {cfg.icon}
+        <div>
+          <p className={`font-bold text-lg ${cfg.color}`}>{cfg.label}</p>
+          <p className="text-xs text-muted-foreground">ออเดอร์ #{result.id} · {result.product_name}</p>
+        </div>
+      </div>
+      {result.status === "approved" && (
+        <div className="flex flex-col gap-3 pt-2 border-t border-border/50">
+          {hasLinks ? (
+            <InviteLinksList inviteLinks={result.invite_links!} />
+          ) : (
+            <div className="flex items-start gap-2">
+              <Loader size={16} className="text-yellow-400 shrink-0 mt-0.5 animate-spin" />
+              <div>
+                <p className="text-sm text-yellow-300 font-medium">กำลังเตรียมลิงก์เข้ากลุ่ม</p>
+                <p className="text-xs text-muted-foreground mt-0.5">ลองกดตรวจสอบใหม่สักครู่ หากรอนานกว่า 10 นาที ติดต่อแอดมิน</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {(result.status === "rejected" || result.status === "pending") && cfg.desc && (
+        <p className="text-sm text-muted-foreground pt-1 border-t border-border/50">{cfg.desc}</p>
+      )}
+      <p className="text-xs text-muted-foreground/60">
+        สั่งซื้อเมื่อ: {result.created_at ? new Date(result.created_at).toLocaleString("th-TH") : "—"}
+      </p>
+    </motion.div>
+  );
+}
+
+function OrderStatusModal({ open, initialOrderId, initialName, initialPhone, onClose }: {
   open: boolean;
   initialOrderId?: number | null;
   initialName?: string;
+  initialPhone?: string;
   onClose: () => void;
 }) {
+  const [mode, setMode] = useState<"id" | "phone">("id");
   const [orderId, setOrderId] = useState(initialOrderId ? String(initialOrderId) : "");
   const [name, setName] = useState(initialName || "");
+  const [phone, setPhone] = useState(initialPhone || "");
+  const [phoneSearch, setPhoneSearch] = useState("");
   const [result, setResult] = useState<OrderStatus | null>(null);
+  const [phoneResults, setPhoneResults] = useState<OrderStatus[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (open && initialOrderId) {
-      setOrderId(String(initialOrderId));
-      setName(initialName || "");
-      setResult(null);
-      setError("");
+    if (open) {
+      if (initialOrderId) {
+        setOrderId(String(initialOrderId));
+        setName(initialName || "");
+        setPhone(initialPhone || "");
+      }
+      setResult(null); setPhoneResults([]); setError("");
     }
-  }, [open, initialOrderId, initialName]);
+  }, [open, initialOrderId, initialName, initialPhone]);
 
   const handleCheck = async () => {
     setError(""); setResult(null);
-    if (!orderId.trim() || !name.trim()) { setError("กรุณากรอกข้อมูลให้ครบ"); return; }
+    if (!orderId.trim()) { setError("กรุณากรอกหมายเลขออเดอร์"); return; }
+    if (!name.trim() && !phone.trim()) { setError("กรุณากรอกชื่อหรือเบอร์โทรเพื่อยืนยัน"); return; }
     setLoading(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/status?name=${encodeURIComponent(name.trim())}`);
+      const params = new URLSearchParams();
+      if (name.trim()) params.append("name", name.trim());
+      if (phone.trim()) params.append("phone", phone.trim());
+      const res = await fetch(`/api/orders/${orderId}/status?${params}`);
       if (res.status === 404) { setError("ไม่พบออเดอร์นี้ กรุณาตรวจสอบหมายเลขออเดอร์"); setLoading(false); return; }
-      if (res.status === 403) { setError("ชื่อไม่ตรงกับออเดอร์นี้ กรุณาตรวจสอบอีกครั้ง"); setLoading(false); return; }
-      if (!res.ok) { setError("เกิดข้อผิดพลาด กรุณาลองใหม่"); setLoading(false); return; }
-      const data = await res.json();
-      setResult(data);
-    } catch {
-      setError("เกิดข้อผิดพลาด กรุณาลองใหม่");
-    }
+      if (res.status === 403) { setError("ชื่อหรือเบอร์โทรไม่ตรงกับออเดอร์นี้"); setLoading(false); return; }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.detail || "เกิดข้อผิดพลาด กรุณาลองใหม่"); setLoading(false); return; }
+      setResult(await res.json());
+    } catch { setError("เกิดข้อผิดพลาด กรุณาลองใหม่"); }
     setLoading(false);
   };
 
-  const statusConfig: Record<string, { icon: React.ReactNode; label: string; color: string; bg: string; desc: string }> = {
-    pending: {
-      icon: <Loader size={28} className="animate-spin text-yellow-400" />,
-      label: "รอการยืนยัน",
-      color: "text-yellow-400",
-      bg: "bg-yellow-500/10 border-yellow-500/30",
-      desc: "แอดมินกำลังตรวจสอบหลักฐานการชำระเงิน กรุณารอสักครู่",
-    },
-    approved: {
-      icon: <CheckCircle size={28} className="text-green-400" />,
-      label: "อนุมัติแล้ว",
-      color: "text-green-400",
-      bg: "bg-green-500/10 border-green-500/30",
-      desc: "",
-    },
-    rejected: {
-      icon: <XCircle size={28} className="text-red-400" />,
-      label: "ไม่ได้รับการอนุมัติ",
-      color: "text-red-400",
-      bg: "bg-red-500/10 border-red-500/30",
-      desc: "กรุณาติดต่อแอดมินหากคิดว่าเกิดข้อผิดพลาด",
-    },
+  const handlePhoneSearch = async () => {
+    setError(""); setPhoneResults([]);
+    if (!phoneSearch.trim()) { setError("กรุณากรอกเบอร์โทร"); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/orders/by-phone?phone=${encodeURIComponent(phoneSearch.trim())}`);
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.detail || "เกิดข้อผิดพลาด"); setLoading(false); return; }
+      const data = await res.json();
+      if (data.length === 0) setError("ไม่พบออเดอร์ที่ใช้เบอร์นี้");
+      else setPhoneResults(data);
+    } catch { setError("เกิดข้อผิดพลาด กรุณาลองใหม่"); }
+    setLoading(false);
   };
-
-  const cfg = result ? (statusConfig[result.status] ?? statusConfig.pending) : null;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border max-w-md">
+      <DialogContent className="bg-card border-border max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-foreground">
             <Search size={18} className="text-primary" />
@@ -439,117 +520,67 @@ function OrderStatusModal({ open, initialOrderId, initialName, onClose }: {
           </DialogTitle>
         </DialogHeader>
 
+        <div className="flex rounded-lg bg-muted p-1 gap-1 mb-1">
+          <button onClick={() => { setMode("id"); setError(""); setPhoneResults([]); setResult(null); }}
+            className={`flex-1 text-sm py-1.5 rounded-md font-medium transition-colors ${mode === "id" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>
+            ค้นหาด้วยเลขออเดอร์
+          </button>
+          <button onClick={() => { setMode("phone"); setError(""); setResult(null); }}
+            className={`flex-1 text-sm py-1.5 rounded-md font-medium transition-colors ${mode === "phone" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>
+            ค้นหาด้วยเบอร์โทร
+          </button>
+        </div>
+
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">หมายเลขออเดอร์</label>
-              <input
-                type="number"
-                placeholder="เช่น 42"
-                value={orderId}
-                onChange={(e) => { setOrderId(e.target.value); setResult(null); setError(""); }}
-                onKeyDown={(e) => e.key === "Enter" && handleCheck()}
-                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อที่ใช้สั่ง</label>
-              <input
-                type="text"
-                placeholder="ชื่อของคุณ"
-                value={name}
-                onChange={(e) => { setName(e.target.value); setResult(null); setError(""); }}
-                onKeyDown={(e) => e.key === "Enter" && handleCheck()}
-                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-              />
-            </div>
-          </div>
-
-          <Button onClick={handleCheck} disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-2">
-            {loading ? <><Loader size={14} className="animate-spin" /> กำลังตรวจสอบ...</> : <><Search size={14} /> ตรวจสอบสถานะ</>}
-          </Button>
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
-              <p className="text-red-400 text-sm">{error}</p>
-            </div>
-          )}
-
-          {result && cfg && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`border rounded-xl p-4 flex flex-col gap-3 ${cfg.bg}`}
-            >
-              <div className="flex items-center gap-3">
-                {cfg.icon}
-                <div>
-                  <p className={`font-bold text-lg ${cfg.color}`}>{cfg.label}</p>
-                  <p className="text-xs text-muted-foreground">ออเดอร์ #{result.id} · {result.product_name}</p>
+          {mode === "id" ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">หมายเลขออเดอร์</label>
+                  <input type="number" placeholder="เช่น 42" value={orderId}
+                    onChange={(e) => { setOrderId(e.target.value); setResult(null); setError(""); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleCheck()}
+                    className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อ หรือ เบอร์โทร</label>
+                  <input type="text" placeholder="ชื่อ หรือ 0812345678" value={name || phone}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (/^\d/.test(v)) { setPhone(v); setName(""); }
+                      else { setName(v); setPhone(""); }
+                      setResult(null); setError("");
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleCheck()}
+                    className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
-
-              {result.status === "approved" && (
-                <div className="flex flex-col gap-3 pt-2 border-t border-border/50">
-                  {result.invite_links ? (
-                    (() => {
-                      let links: string[] = [];
-                      try { links = JSON.parse(result.invite_links); } catch { links = []; }
-                      return links.length > 0 ? (
-                        <div className="flex flex-col gap-2">
-                          <p className="text-sm font-semibold text-green-300 flex items-center gap-1.5">
-                            <CheckCircle size={15} /> ลิงก์เข้ากลุ่มพร้อมแล้ว!
-                          </p>
-                          <p className="text-xs text-muted-foreground">กดลิงก์ด้านล่างเพื่อเข้ากลุ่ม (ใช้ได้ครั้งเดียว ห้ามแชร์)</p>
-                          {links.map((link, i) => (
-                            <a
-                              key={i}
-                              href={link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-2 bg-[#229ED9]/15 border border-[#229ED9]/40 hover:border-[#229ED9] rounded-lg px-4 py-3 transition-colors"
-                            >
-                              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#229ED9] shrink-0">
-                                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.29 13.91l-2.957-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.855.649z" />
-                              </svg>
-                              <span className="text-[#229ED9] font-medium text-sm">
-                                {links.length > 1 ? `เข้ากลุ่มที่ ${i + 1}` : "กดเพื่อเข้ากลุ่ม Telegram"}
-                              </span>
-                              <ChevronRight size={14} className="ml-auto text-[#229ED9]" />
-                            </a>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="flex items-start gap-2">
-                          <Loader size={16} className="text-yellow-400 shrink-0 mt-0.5 animate-spin" />
-                          <p className="text-sm text-yellow-300">กำลังเตรียมลิงก์ กรุณาลองตรวจสอบใหม่อีกครั้ง</p>
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="flex items-start gap-2">
-                      <Loader size={16} className="text-yellow-400 shrink-0 mt-0.5 animate-spin" />
-                      <div>
-                        <p className="text-sm text-yellow-300 font-medium">กำลังเตรียมลิงก์เข้ากลุ่ม</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">ลองกดตรวจสอบใหม่สักครู่ หากรอนานกว่า 10 นาที ติดต่อแอดมิน</p>
-                      </div>
-                    </div>
-                  )}
+              <Button onClick={handleCheck} disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-2">
+                {loading ? <><Loader size={14} className="animate-spin" /> กำลังตรวจสอบ...</> : <><Search size={14} /> ตรวจสอบสถานะ</>}
+              </Button>
+              {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3"><p className="text-red-400 text-sm">{error}</p></div>}
+              {result && <OrderStatusCard result={result} />}
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">เบอร์โทรที่ใช้สั่ง</label>
+                <input type="tel" placeholder="0812345678" value={phoneSearch}
+                  onChange={(e) => { setPhoneSearch(e.target.value); setPhoneResults([]); setError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && handlePhoneSearch()}
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+              </div>
+              <Button onClick={handlePhoneSearch} disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold gap-2">
+                {loading ? <><Loader size={14} className="animate-spin" /> กำลังค้นหา...</> : <><Search size={14} /> ค้นหาออเดอร์</>}
+              </Button>
+              {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3"><p className="text-red-400 text-sm">{error}</p></div>}
+              {phoneResults.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs text-muted-foreground">พบ {phoneResults.length} ออเดอร์</p>
+                  {phoneResults.map((r) => <OrderStatusCard key={r.id} result={r} />)}
                 </div>
               )}
-
-              {result.status === "rejected" && (
-                <p className="text-sm text-muted-foreground pt-1 border-t border-border/50">{cfg.desc}</p>
-              )}
-
-              {result.status === "pending" && (
-                <p className="text-sm text-muted-foreground pt-1 border-t border-border/50">{cfg.desc}</p>
-              )}
-
-              <p className="text-xs text-muted-foreground/60">
-                สั่งซื้อเมื่อ: {result.created_at ? new Date(result.created_at).toLocaleString("th-TH") : "—"}
-              </p>
-            </motion.div>
+            </>
           )}
         </div>
       </DialogContent>
@@ -563,6 +594,7 @@ export default function StoreFront() {
   const [showOrderStatus, setShowOrderStatus] = useState(false);
   const [checkOrderId, setCheckOrderId] = useState<number | null>(null);
   const [checkName, setCheckName] = useState("");
+  const [checkPhone, setCheckPhone] = useState("");
 
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["products"],
@@ -580,9 +612,10 @@ export default function StoreFront() {
   const announcement = settings?.announcement || "";
   const botUsername = settings?.bot_username || "";
 
-  const handleBuySuccess = (orderId: number, name: string) => {
+  const handleBuySuccess = (orderId: number, name: string, phone: string) => {
     setCheckOrderId(orderId);
     setCheckName(name);
+    setCheckPhone(phone);
     setShowOrderStatus(true);
   };
 
@@ -686,7 +719,8 @@ export default function StoreFront() {
         open={showOrderStatus}
         initialOrderId={checkOrderId}
         initialName={checkName}
-        onClose={() => { setShowOrderStatus(false); setCheckOrderId(null); setCheckName(""); }}
+        initialPhone={checkPhone}
+        onClose={() => { setShowOrderStatus(false); setCheckOrderId(null); setCheckName(""); setCheckPhone(""); }}
       />
     </div>
   );

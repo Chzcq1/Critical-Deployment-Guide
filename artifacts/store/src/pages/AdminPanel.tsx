@@ -24,11 +24,13 @@ interface Order {
   telegram_user_id: number | null;
   telegram_username: string | null;
   telegram_first_name: string | null;
+  phone_number: string | null;
   product_name: string;
   payment_type: string;
   payment_proof: string | null;
   status: string;
   link_sent: boolean;
+  invite_links: string | null;
   created_at: string;
 }
 
@@ -283,7 +285,73 @@ function OrderProofViewer({ proof, type }: { proof: string | null; type: string 
   return <span className="text-xs text-muted-foreground">{proof.slice(0, 30)}...</span>;
 }
 
+function SetLinksModal({ order, token, onClose }: { order: Order; token: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const existingLinks: string[] = (() => {
+    try { return order.invite_links ? JSON.parse(order.invite_links) : []; } catch { return []; }
+  })();
+  const [lines, setLines] = useState(existingLinks.join("\n"));
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const links = lines.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (links.length === 0) throw new Error("กรุณากรอกลิงก์อย่างน้อย 1 ลิงก์");
+      const res = await fetch(`/api/admin/orders/${order.id}/links`, {
+        method: "PUT",
+        headers: authHeaders(token),
+        body: JSON.stringify({ invite_links: links }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || "บันทึกไม่สำเร็จ"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orders"] });
+      setSaved(true);
+      setTimeout(() => onClose(), 1500);
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="bg-card border-border max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">ใส่ลิงก์เชิญ — ออเดอร์ #{order.id}</DialogTitle>
+          <p className="text-xs text-muted-foreground mt-1">{order.product_name} · {order.telegram_first_name || "—"}</p>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              ลิงก์ Telegram (1 ลิงก์ต่อบรรทัด)
+            </label>
+            <textarea
+              rows={5}
+              placeholder={"https://t.me/+xxxxxxxxxxxx\nhttps://t.me/+yyyyyyyyyyyy"}
+              value={lines}
+              onChange={(e) => { setLines(e.target.value); setError(""); setSaved(false); }}
+              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none font-mono"
+            />
+            <p className="text-xs text-muted-foreground">จำนวน: {lines.split("\n").filter((l) => l.trim()).length} ลิงก์</p>
+          </div>
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {saved && <p className="text-green-400 text-sm">✓ บันทึกสำเร็จ สถานะจะเปลี่ยนเป็น approved</p>}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} className="flex-1">ยกเลิก</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
+              {mutation.isPending ? "กำลังบันทึก..." : "บันทึกลิงก์"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function OrdersTab({ token }: { token: string }) {
+  const [setLinksOrder, setSetLinksOrder] = useState<Order | null>(null);
+
   const { data: orders = [], isLoading } = useQuery<Order[]>({
     queryKey: ["admin-orders"],
     queryFn: () =>
@@ -293,6 +361,9 @@ function OrdersTab({ token }: { token: string }) {
 
   return (
     <div>
+      {setLinksOrder && (
+        <SetLinksModal order={setLinksOrder} token={token} onClose={() => setSetLinksOrder(null)} />
+      )}
       <div className="mb-4">
         <h2 className="text-sm text-muted-foreground">{orders.length} ออเดอร์</h2>
       </div>
@@ -318,6 +389,7 @@ function OrdersTab({ token }: { token: string }) {
                 <th className="px-4 py-3 text-left">หลักฐาน</th>
                 <th className="px-4 py-3 text-left">สถานะ</th>
                 <th className="px-4 py-3 text-left">วันที่</th>
+                <th className="px-4 py-3 text-left">ลิงก์</th>
               </tr>
             </thead>
             <tbody>
@@ -328,7 +400,7 @@ function OrdersTab({ token }: { token: string }) {
                     <p className="text-foreground font-medium">{o.telegram_first_name || "—"}</p>
                     <p className="text-xs text-muted-foreground">
                       {o.telegram_username ? `@${o.telegram_username}` : ""}
-                      {o.telegram_user_id ? ` · ${o.telegram_user_id}` : ""}
+                      {o.phone_number ? ` · ${o.phone_number}` : ""}
                     </p>
                   </td>
                   <td className="px-4 py-3 text-foreground">{o.product_name}</td>
@@ -347,6 +419,19 @@ function OrdersTab({ token }: { token: string }) {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {o.created_at ? new Date(o.created_at).toLocaleDateString("th-TH") : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSetLinksOrder(o)}
+                      className="text-xs h-7 px-2 gap-1"
+                    >
+                      <ExternalLink size={11} />
+                      {o.invite_links && (() => { try { return JSON.parse(o.invite_links).length > 0; } catch { return false; } })()
+                        ? "แก้ลิงก์"
+                        : "ใส่ลิงก์"}
+                    </Button>
                   </td>
                 </tr>
               ))}
