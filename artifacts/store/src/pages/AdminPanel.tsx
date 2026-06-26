@@ -1098,10 +1098,10 @@ function SettingsTab({ token }: { token: string }) {
       <div className="flex flex-col gap-4 bg-card border border-primary/20 rounded-xl p-5">
         <div className="flex items-center gap-2">
           <UserCheck size={15} className="text-primary" />
-          <h3 className="font-semibold text-foreground text-sm">ระบบตรวจสลีปอัตโนมัติ (SlipOK)</h3>
+          <h3 className="font-semibold text-foreground text-sm">ระบบตรวจสลีปอัตโนมัติ (Slip2Go)</h3>
         </div>
         <p className="text-xs text-muted-foreground -mt-2">
-          ตรวจสอบสลีปธนาคารด้วย SlipOK API — แอดมินทุกคนจะเห็นผลตรวจสอบเหมือนกัน ต้องตั้งค่า <code className="bg-muted px-1 rounded">SLIPOK_API_KEY</code> และ <code className="bg-muted px-1 rounded">SLIPOK_BRANCH_ID</code> ใน Secrets ก่อน
+          ตรวจสอบสลีปธนาคารด้วย Slip2Go API — แอดมินทุกคนจะเห็นผลตรวจสอบเหมือนกัน ต้องตั้งค่า <code className="bg-muted px-1 rounded">SLIP2GO_API_KEY</code> ใน Secrets ก่อน
         </p>
         <div className="flex flex-col gap-2">
           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">โหมดตรวจสลีป</label>

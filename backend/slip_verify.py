@@ -1,28 +1,31 @@
-import base64
 import logging
 import httpx
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+SLIP2GO_BASE = "https://api.slip2go.com"
+
 
 def _extract_name(obj: dict | None) -> str | None:
     if not obj:
         return None
-    account = obj.get("account") or {}
-    return account.get("name") or obj.get("name")
+    return obj.get("name") or obj.get("accountName")
 
 
 def _extract_bank(obj: dict | None) -> str | None:
     if not obj:
         return None
     bank = obj.get("bank") or {}
-    return bank.get("name") or bank.get("id")
+    return bank.get("name") or bank.get("code")
 
 
 async def verify_slip(base64_image: str) -> dict:
     """
-    Verify a Thai bank slip image using SlipOK API (api.slipok.com).
+    Verify a Thai bank slip image using Slip2Go API (api.slip2go.com).
+
+    Sends a base64-encoded image to the /api/verify-slip/base64/info endpoint.
+    Auth: Header  Authorization: <secret_key>
 
     Returns:
         dict with keys:
@@ -39,14 +42,13 @@ async def verify_slip(base64_image: str) -> dict:
             raw          : dict  (full API response)
     """
     settings = get_settings()
-    api_key = settings.slipok_api_key
-    branch_id = settings.slipok_branch_id
+    api_key = settings.slip2go_api_key
 
-    if not api_key or not branch_id:
+    if not api_key:
         return {
             "success": False,
             "status": "no_config",
-            "error_message": "SLIPOK_API_KEY หรือ SLIPOK_BRANCH_ID ยังไม่ได้ตั้งค่า",
+            "error_message": "SLIP2GO_API_KEY ยังไม่ได้ตั้งค่า",
             "trans_ref": None, "date_time": None, "amount": None,
             "sender_name": None, "sender_bank": None,
             "receiver_name": None, "receiver_bank": None,
@@ -57,35 +59,25 @@ async def verify_slip(base64_image: str) -> dict:
     if "," in img_data:
         img_data = img_data.split(",", 1)[1]
 
-    try:
-        image_bytes = base64.b64decode(img_data)
-    except Exception as e:
-        return {
-            "success": False,
-            "status": "error",
-            "error_message": f"ข้อมูลรูปภาพไม่ถูกต้อง: {e}",
-            "trans_ref": None, "date_time": None, "amount": None,
-            "sender_name": None, "sender_bank": None,
-            "receiver_name": None, "receiver_bank": None,
-            "raw": {},
-        }
-
-    url = f"https://api.slipok.com/api/line/apikey/{branch_id}"
+    url = f"{SLIP2GO_BASE}/api/verify-slip/base64/info"
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 url,
-                headers={"x-authorization": api_key},
-                files={"files": ("slip.jpg", image_bytes, "image/jpeg")},
+                headers={
+                    "Authorization": api_key,
+                    "Content-Type": "application/json",
+                },
+                json={"payload": {"imageBase64": img_data}},
             )
             data = resp.json()
     except Exception as e:
-        logger.error(f"SlipOK API error: {e}")
+        logger.error(f"Slip2Go API error: {e}")
         return {
             "success": False,
             "status": "error",
-            "error_message": f"เชื่อมต่อ SlipOK ไม่ได้: {e}",
+            "error_message": f"เชื่อมต่อ Slip2Go ไม่ได้: {e}",
             "trans_ref": None, "date_time": None, "amount": None,
             "sender_name": None, "sender_bank": None,
             "receiver_name": None, "receiver_bank": None,
@@ -110,17 +102,18 @@ async def verify_slip(base64_image: str) -> dict:
         result.update({"success": True, "status": "verified", "error_message": None})
     else:
         code = str(data.get("code", ""))
-        if code in ("1003", "400301", "400302"):
+        msg = data.get("message") or data.get("error") or "ตรวจสอบไม่สำเร็จ"
+        if "duplicate" in msg.lower() or code in ("4003", "DUPLICATE"):
             status = "duplicate"
-        elif code in ("1005", "400101"):
+        elif "qr" in msg.lower() or "qrcode" in msg.lower() or code in ("4001", "NO_QR"):
             status = "no_qr"
         else:
             status = "failed"
         result.update({
             "success": False,
             "status": status,
-            "error_message": data.get("message") or "ตรวจสอบไม่สำเร็จ",
+            "error_message": msg,
         })
 
-    logger.info(f"SlipOK verify result: status={result['status']} amount={result['amount']} transRef={result['trans_ref']}")
+    logger.info(f"Slip2Go verify result: status={result['status']} amount={result['amount']} transRef={result['trans_ref']}")
     return result

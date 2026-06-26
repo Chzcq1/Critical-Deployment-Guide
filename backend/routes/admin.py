@@ -242,7 +242,7 @@ async def admin_approve_order(order_id: int, db: Session = Depends(get_db), admi
 
 @router.post("/admin/orders/{order_id}/verify-slip", response_model=OrderResponse)
 async def admin_verify_slip(order_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
-    """Manually (re-)verify a bank slip for an order using SlipOK API."""
+    """Manually (re-)verify a bank slip for an order using Slip2Go API."""
     import json as _json
     from backend.slip_verify import verify_slip
 
