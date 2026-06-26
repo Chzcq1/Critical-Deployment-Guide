@@ -316,19 +316,33 @@ function ProductsTab({ token }: { token: string }) {
 }
 
 function OrderProofViewer({ proof, type }: { proof: string | null; type: string }) {
+  const [open, setOpen] = useState(false);
   if (!proof) return <span className="text-muted-foreground text-xs">—</span>;
   if (type === "truemoney") {
     return (
       <a href={proof} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline">
-        ลิงก์ <ExternalLink size={10} />
+        ดูลิงก์ <ExternalLink size={10} />
       </a>
     );
   }
   if (proof.startsWith("data:image")) {
     return (
-      <a href={proof} target="_blank" rel="noopener noreferrer" className="text-primary text-xs flex items-center gap-1 hover:underline">
-        ดูสลีป <ExternalLink size={10} />
-      </a>
+      <>
+        <button
+          onClick={() => setOpen(true)}
+          className="text-primary text-xs flex items-center gap-1 hover:underline cursor-pointer"
+        >
+          ดูสลีป <ExternalLink size={10} />
+        </button>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="max-w-lg p-3">
+            <DialogHeader>
+              <DialogTitle className="text-sm">หลักฐานการชำระเงิน</DialogTitle>
+            </DialogHeader>
+            <img src={proof} alt="slip" className="w-full rounded-lg object-contain max-h-[70vh]" />
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
   return <span className="text-xs text-muted-foreground">{proof.slice(0, 30)}...</span>;
