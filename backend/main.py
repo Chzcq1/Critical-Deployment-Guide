@@ -1,0 +1,88 @@
+import logging
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+from backend.config import get_settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from backend.database import engine, Base
+    if engine is not None:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified")
+    else:
+        logger.warning("Skipping DB init — DATABASE_URL not set")
+
+    if settings.bot_token and settings.webhook_url:
+        try:
+            from backend import bot as bot_module
+            await bot_module.setup_webhook(settings.webhook_url)
+        except Exception as e:
+            logger.warning(f"Could not set webhook on startup: {e}")
+    else:
+        logger.warning("BOT_TOKEN or WEBHOOK_URL not set — skipping webhook setup")
+
+    yield
+    logger.info("Shutting down")
+
+
+app = FastAPI(
+    title="Digital Product Store API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+from backend.routes.products import router as products_router
+from backend.routes.orders import router as orders_router
+from backend.routes.admin import router as admin_router
+from backend.routes.auth import router as auth_router
+from backend.webhook import router as webhook_router
+
+app.include_router(products_router, prefix="/api")
+app.include_router(orders_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(webhook_router)
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "artifacts", "store", "dist", "public")
+
+if os.path.isdir(STATIC_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        index = os.path.join(STATIC_DIR, "index.html")
+        return FileResponse(index)
+else:
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return {"message": "Digital Product Store API is running. Add env vars and build the frontend."}
+
+
+@app.get("/api/healthz")
+async def healthz():
+    return {
+        "status": "ok",
+        "bot_configured": bool(settings.bot_token),
+        "database_configured": bool(settings.database_url),
+    }
