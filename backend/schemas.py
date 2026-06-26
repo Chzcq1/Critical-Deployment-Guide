@@ -126,6 +126,7 @@ class StoreSettingsUpdate(BaseModel):
     bank_qr_url: Optional[str] = None
     finance_admin_names: Optional[str] = None
     slip_verify_mode: Optional[str] = None
+    receiver_bank_code: Optional[str] = None
 
 
 class StoreSettingsResponse(BaseModel):
@@ -139,6 +140,7 @@ class StoreSettingsResponse(BaseModel):
     bank_qr_url: str
     finance_admin_names: str
     slip_verify_mode: str
+    receiver_bank_code: str
 
 
 class AdminLogCreate(BaseModel):

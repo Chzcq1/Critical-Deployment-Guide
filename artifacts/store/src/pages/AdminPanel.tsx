@@ -77,6 +77,7 @@ interface StoreSettings {
   bank_qr_url: string;
   finance_admin_names: string;
   slip_verify_mode: string;
+  receiver_bank_code: string;
 }
 
 function authHeaders(token: string) {
@@ -482,12 +483,13 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
   try { if (result) parsed = JSON.parse(result); } catch {}
 
   const cfg: Record<string, { label: string; cls: string; icon: string }> = {
-    verified:   { label: "ยืนยันแล้ว",   cls: "bg-green-500/20 text-green-400 border-green-500/30",   icon: "✅" },
-    duplicate:  { label: "สลีปซ้ำ",       cls: "bg-orange-500/20 text-orange-400 border-orange-500/30", icon: "⚠️" },
-    no_qr:      { label: "อ่าน QR ไม่ได้", cls: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", icon: "📷" },
-    failed:     { label: "ตรวจไม่ผ่าน",   cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "❌" },
-    error:      { label: "เชื่อมต่อล้มเหลว",cls: "bg-red-500/20 text-red-400 border-red-500/30",        icon: "🔌" },
-    no_config:  { label: "ยังไม่ตั้งค่า API",cls: "bg-muted text-muted-foreground border-border",        icon: "⚙️" },
+    verified:        { label: "ยืนยันแล้ว",      cls: "bg-green-500/20 text-green-400 border-green-500/30",   icon: "✅" },
+    wrong_receiver:  { label: "บัญชีไม่ตรง",     cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "🏦" },
+    duplicate:       { label: "สลีปซ้ำ",          cls: "bg-orange-500/20 text-orange-400 border-orange-500/30", icon: "⚠️" },
+    no_qr:           { label: "อ่าน QR ไม่ได้",   cls: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", icon: "📷" },
+    failed:          { label: "ตรวจไม่ผ่าน",      cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "❌" },
+    error:           { label: "เชื่อมต่อล้มเหลว", cls: "bg-red-500/20 text-red-400 border-red-500/30",         icon: "🔌" },
+    no_config:       { label: "ยังไม่ตั้งค่า API", cls: "bg-muted text-muted-foreground border-border",         icon: "⚙️" },
   };
   const c = cfg[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border", icon: "❓" };
 
@@ -956,6 +958,7 @@ function SettingsTab({ token }: { token: string }) {
     bank_qr_url: "",
     finance_admin_names: "",
     slip_verify_mode: "off",
+    receiver_bank_code: "",
   });
 
   const [initialized, setInitialized] = useState(false);
@@ -1087,6 +1090,35 @@ function SettingsTab({ token }: { token: string }) {
           />
           {form.bank_qr_url && (
             <img src={form.bank_qr_url} alt="QR Preview" className="mt-2 w-24 h-24 rounded-lg border border-border object-contain bg-white" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ธนาคารผู้รับ (สำหรับตรวจสลีป Slip2Go)</label>
+          <p className="text-[11px] text-muted-foreground">ระบุเพื่อให้ Slip2Go ตรวจว่าลูกค้าโอนมาถูกบัญชีหรือเปล่า — ถ้าไม่ระบุ จะข้ามการตรวจบัญชี</p>
+          <select
+            value={form.receiver_bank_code}
+            onChange={(e) => setForm((f) => ({ ...f, receiver_bank_code: e.target.value }))}
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+          >
+            <option value="">— ไม่ตรวจบัญชีผู้รับ —</option>
+            <option value="promptpay">🏧 พร้อมเพย์ (PromptPay)</option>
+            <option value="01002">ธนาคารกรุงเทพ (BBL)</option>
+            <option value="01004">ธนาคารกสิกรไทย (KBANK)</option>
+            <option value="01006">ธนาคารกรุงไทย (KTB)</option>
+            <option value="01011">ธนาคารทหารไทยธนชาต (TTB)</option>
+            <option value="01014">ธนาคารไทยพาณิชย์ (SCB)</option>
+            <option value="01017">ซิตี้แบงก์ (CITI)</option>
+            <option value="01022">ธนาคารซีไอเอ็มบีไทย (CIMB)</option>
+            <option value="01024">ธนาคารยูโอบี (UOB)</option>
+            <option value="01025">ธนาคารกรุงศรีอยุธยา (BAY)</option>
+            <option value="01030">ธนาคารออมสิน (GSB)</option>
+            <option value="01033">ธนาคารอาคารสงเคราะห์ (GHB)</option>
+            <option value="01034">ธ.ก.ส. (BAAC)</option>
+          </select>
+          {form.receiver_bank_code && (
+            <p className="text-[11px] text-primary/80 bg-primary/5 border border-primary/20 rounded-lg px-2 py-1.5">
+              ✅ จะตรวจว่าผู้รับในสลีปตรงกับเลขบัญชี <strong>{form.bank_account || "(กรอกเลขบัญชีด้านบน)"}</strong>
+            </p>
           )}
         </div>
       </div>

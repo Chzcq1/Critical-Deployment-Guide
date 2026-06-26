@@ -34,6 +34,7 @@ SETTING_DEFAULTS = {
     "finance_admin_names": "",
     "finance_monthly_goal": "0",
     "slip_verify_mode": "off",
+    "receiver_bank_code": "",
 }
 
 
@@ -258,7 +259,16 @@ async def admin_verify_slip(order_id: int, db: Session = Depends(get_db), admin:
     if product and product.price is not None:
         expected_amount = float(product.price)
 
-    result = await verify_slip(order.payment_proof, expected_amount=expected_amount)
+    # Look up receiver account settings for receiver verification
+    bank_account = _get_setting(db, "bank_account") or None
+    bank_code = _get_setting(db, "receiver_bank_code") or None
+
+    result = await verify_slip(
+        order.payment_proof,
+        expected_amount=expected_amount,
+        bank_account=bank_account,
+        bank_code=bank_code,
+    )
     order.slip_verify_status = result["status"]
     order.slip_verify_result = _json.dumps(result, ensure_ascii=False, default=str)
     db.commit()
@@ -293,6 +303,7 @@ def _build_settings_response(db: Session) -> StoreSettingsResponse:
         bank_qr_url=_get_setting(db, "bank_qr_url"),
         finance_admin_names=_get_setting(db, "finance_admin_names"),
         slip_verify_mode=_get_setting(db, "slip_verify_mode") or "off",
+        receiver_bank_code=_get_setting(db, "receiver_bank_code") or "",
     )
 
 
