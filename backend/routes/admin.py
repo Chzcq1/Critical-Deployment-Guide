@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from backend.database import get_db
-from backend.models import Product, Order, OTPSession, StoreSettings
+from backend.models import Product, Order, OTPSession, StoreSettings, FinanceEntry
 from backend.schemas import (
     ProductCreate, ProductUpdate, ProductResponse,
     OrderResponse, OTPRequest, OTPVerify, AdminToken,
@@ -29,6 +30,8 @@ SETTING_DEFAULTS = {
     "bank_name": "",
     "bank_account": "",
     "bank_qr_url": "",
+    "finance_admin_names": "",
+    "finance_monthly_goal": "0",
 }
 
 
@@ -167,6 +170,16 @@ def list_orders(db: Session = Depends(get_db), admin: dict = Depends(get_admin))
     return db.query(Order).order_by(Order.id.desc()).all()
 
 
+@router.delete("/admin/orders/{order_id}")
+def delete_order(order_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    db.delete(order)
+    db.commit()
+    return {"message": "Order deleted"}
+
+
 @router.post("/admin/orders/{order_id}/approve", response_model=OrderResponse)
 async def admin_approve_order(order_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
     order = db.query(Order).filter(Order.id == order_id).first()
@@ -194,6 +207,32 @@ async def admin_approve_order(order_id: int, db: Session = Depends(get_db), admi
     if product:
         product.sales_count = (product.sales_count or 0) + 1
         db.commit()
+
+    # Auto-add finance entry for approved order
+    if product:
+        price = Decimal(str(product.price))
+        admin_names_str = _get_setting(db, "finance_admin_names")
+        admin_names = [n.strip() for n in admin_names_str.split(",") if n.strip()] if admin_names_str else ["แอดมิน"]
+        per_admin = price / len(admin_names)
+        for name in admin_names:
+            entry = FinanceEntry(
+                amount=per_admin,
+                description=f"ออเดอร์ #{order.id} — {product.name}",
+                admin_name=name,
+                entry_type="order",
+                order_id=order.id,
+            )
+            db.add(entry)
+        db.commit()
+        try:
+            await bot_module.send_finance_notification(
+                action="รายได้จากออเดอร์",
+                description=f"ออเดอร์ #{order.id} — {product.name}",
+                amount=float(price),
+                admin_name=" / ".join(admin_names),
+            )
+        except Exception:
+            pass
 
     db.refresh(order)
     return order
@@ -224,6 +263,7 @@ def _build_settings_response(db: Session) -> StoreSettingsResponse:
         bank_name=_get_setting(db, "bank_name"),
         bank_account=_get_setting(db, "bank_account"),
         bank_qr_url=_get_setting(db, "bank_qr_url"),
+        finance_admin_names=_get_setting(db, "finance_admin_names"),
     )
 
 

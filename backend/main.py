@@ -49,6 +49,8 @@ def _run_migrations(engine):
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS badge_color VARCHAR(20)",
         # sales_count tracks total approved orders per product
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS sales_count INTEGER NOT NULL DEFAULT 0",
+        # finance_entries table columns (created via create_all, these guard extras)
+        "ALTER TABLE finance_entries ADD COLUMN IF NOT EXISTS order_id INTEGER",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:
@@ -106,6 +108,7 @@ from backend.routes.orders import router as orders_router
 from backend.routes.admin import router as admin_router
 from backend.routes.auth import router as auth_router
 from backend.routes.announcements import router as announcements_router
+from backend.routes.finance import router as finance_router
 from backend.webhook import router as webhook_router
 
 app.include_router(products_router, prefix="/api")
@@ -113,6 +116,7 @@ app.include_router(orders_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(announcements_router, prefix="/api")
+app.include_router(finance_router, prefix="/api")
 app.include_router(webhook_router)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "artifacts", "store", "dist", "public")

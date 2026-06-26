@@ -200,6 +200,30 @@ async def send_otp(telegram_id: int, otp_code: str) -> tuple[bool, str]:
         return False, str(e)
 
 
+async def send_finance_notification(action: str, description: str, amount: float, admin_name: str) -> bool:
+    if not settings.bot_token or not settings.admin_group_id:
+        return False
+    from telegram.error import TelegramError
+    bot = get_bot()
+    sign = "+" if amount >= 0 else ""
+    emoji = "💰" if amount >= 0 else "💸"
+    try:
+        await bot.send_message(
+            chat_id=settings.admin_group_id,
+            text=(
+                f"{emoji} <b>{action}</b>\n\n"
+                f"📝 {description}\n"
+                f"👤 แอดมิน: {admin_name}\n"
+                f"💵 จำนวน: {sign}฿{abs(amount):,.2f}"
+            ),
+            parse_mode="HTML",
+        )
+        return True
+    except TelegramError as e:
+        logger.error(f"Failed to send finance notification: {e}")
+        return False
+
+
 async def setup_webhook(webhook_url: str) -> bool:
     if not settings.bot_token:
         logger.warning("BOT_TOKEN not set — skipping webhook setup")

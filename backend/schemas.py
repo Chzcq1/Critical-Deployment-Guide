@@ -122,6 +122,7 @@ class StoreSettingsUpdate(BaseModel):
     bank_name: Optional[str] = None
     bank_account: Optional[str] = None
     bank_qr_url: Optional[str] = None
+    finance_admin_names: Optional[str] = None
 
 
 class StoreSettingsResponse(BaseModel):
@@ -133,6 +134,33 @@ class StoreSettingsResponse(BaseModel):
     bank_name: str
     bank_account: str
     bank_qr_url: str
+    finance_admin_names: str
+
+
+class FinanceEntryCreate(BaseModel):
+    amount: Decimal
+    description: str
+    admin_name: str
+    entry_type: str = "income"
+
+
+class FinanceEntryResponse(BaseModel):
+    id: int
+    amount: Decimal
+    description: str
+    admin_name: str
+    entry_type: str
+    order_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class FinanceSummary(BaseModel):
+    total_balance: Decimal
+    admin_balances: dict
+    daily_chart: list
+    monthly_goal: Decimal
 
 
 class AnnouncementCreate(BaseModel):

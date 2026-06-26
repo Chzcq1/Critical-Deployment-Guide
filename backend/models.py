@@ -75,3 +75,15 @@ class Announcement(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class FinanceEntry(Base):
+    __tablename__ = "finance_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    amount = Column(Numeric(10, 2), nullable=False)
+    description = Column(String(255), nullable=False)
+    admin_name = Column(String(100), nullable=False)
+    entry_type = Column(String(50), nullable=False, default="income")
+    order_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

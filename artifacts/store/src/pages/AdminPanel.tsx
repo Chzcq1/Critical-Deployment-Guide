@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star, Wallet, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import AnnouncementsTab from "@/components/AnnouncementsTab";
 
 interface Product {
@@ -49,6 +50,7 @@ interface StoreSettings {
   bank_name: string;
   bank_account: string;
   bank_qr_url: string;
+  finance_admin_names: string;
 }
 
 function authHeaders(token: string) {
@@ -540,8 +542,48 @@ function SetLinksModal({ order, token, onClose }: { order: Order; token: string;
   );
 }
 
+function ConfirmDialog({
+  title,
+  description,
+  onConfirm,
+  onCancel,
+  confirmLabel = "ยืนยัน",
+  variant = "danger",
+}: {
+  title: string;
+  description?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirmLabel?: string;
+  variant?: "danger" | "default";
+}) {
+  return (
+    <Dialog open onOpenChange={onCancel}>
+      <DialogContent className="bg-card border-border max-w-sm">
+        <DialogHeader>
+          <div className="flex items-center gap-2 text-red-400">
+            <AlertTriangle size={18} />
+            <DialogTitle className="text-foreground">{title}</DialogTitle>
+          </div>
+        </DialogHeader>
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        <div className="flex gap-2 mt-2">
+          <Button variant="outline" onClick={onCancel} className="flex-1">ยกเลิก</Button>
+          <Button
+            onClick={onConfirm}
+            className={`flex-1 font-bold ${variant === "danger" ? "bg-red-600 hover:bg-red-500 text-white border-0" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function OrdersTab({ token }: { token: string }) {
   const [setLinksOrder, setSetLinksOrder] = useState<Order | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const qc = useQueryClient();
 
   const { data: orders = [], isLoading } = useQuery<Order[]>({
@@ -557,7 +599,11 @@ function OrdersTab({ token }: { token: string }) {
         if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "อนุมัติไม่สำเร็จ"); }
         return r.json();
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-orders"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orders"] });
+      qc.invalidateQueries({ queryKey: ["finance-summary"] });
+      qc.invalidateQueries({ queryKey: ["finance-entries"] });
+    },
   });
 
   const rejectMutation = useMutation({
@@ -569,10 +615,31 @@ function OrdersTab({ token }: { token: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-orders"] }),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      fetch(`/api/admin/orders/${orderId}`, { method: "DELETE", headers: authHeaders(token) }).then(async (r) => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "ลบไม่สำเร็จ"); }
+        return r.json();
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orders"] });
+      setDeleteConfirm(null);
+    },
+  });
+
   const pendingCount = orders.filter((o) => o.status === "pending").length;
 
   return (
     <div>
+      {deleteConfirm !== null && (
+        <ConfirmDialog
+          title="ลบออเดอร์นี้?"
+          description={`ออเดอร์ #${deleteConfirm} จะถูกลบถาวร ไม่สามารถกู้คืนได้`}
+          confirmLabel={deleteMutation.isPending ? "กำลังลบ..." : "ลบออเดอร์"}
+          onConfirm={() => deleteMutation.mutate(deleteConfirm)}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
       {setLinksOrder && (
         <SetLinksModal order={setLinksOrder} token={token} onClose={() => setSetLinksOrder(null)} />
       )}
@@ -668,19 +735,38 @@ function OrdersTab({ token }: { token: string }) {
                           </Button>
                         </div>
                       ) : o.status === "approved" ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSetLinksOrder(o)}
+                            className="text-xs h-7 px-2 gap-1"
+                          >
+                            <ExternalLink size={11} />
+                            {o.invite_links && (() => { try { return JSON.parse(o.invite_links).length > 0; } catch { return false; } })()
+                              ? "แก้ลิงก์"
+                              : "ใส่ลิงก์"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeleteConfirm(o.id)}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+                            title="ลบออเดอร์"
+                          >
+                            <Trash2 size={11} />
+                          </Button>
+                        </div>
+                      ) : (
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => setSetLinksOrder(o)}
-                          className="text-xs h-7 px-2 gap-1"
+                          variant="ghost"
+                          onClick={() => setDeleteConfirm(o.id)}
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+                          title="ลบออเดอร์"
                         >
-                          <ExternalLink size={11} />
-                          {o.invite_links && (() => { try { return JSON.parse(o.invite_links).length > 0; } catch { return false; } })()
-                            ? "แก้ลิงก์"
-                            : "ใส่ลิงก์"}
+                          <Trash2 size={11} />
                         </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
                   </tr>
@@ -712,6 +798,7 @@ function SettingsTab({ token }: { token: string }) {
     bank_name: "",
     bank_account: "",
     bank_qr_url: "",
+    finance_admin_names: "",
   });
 
   const [initialized, setInitialized] = useState(false);
@@ -844,6 +931,27 @@ function SettingsTab({ token }: { token: string }) {
           {form.bank_qr_url && (
             <img src={form.bank_qr_url} alt="QR Preview" className="mt-2 w-24 h-24 rounded-lg border border-border object-contain bg-white" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 bg-card border border-green-500/20 rounded-xl p-5">
+        <div className="flex items-center gap-2">
+          <Wallet size={15} className="text-green-400" />
+          <h3 className="font-semibold text-foreground text-sm">ตั้งค่าระบบการเงิน</h3>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">ชื่อแอดมินสำหรับแบ่งรายได้อัตโนมัติเมื่ออนุมัติออเดอร์</p>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อแอดมิน (คั่นด้วยคอมมา)</label>
+          <input
+            type="text"
+            value={form.finance_admin_names}
+            onChange={(e) => setForm((f) => ({ ...f, finance_admin_names: e.target.value }))}
+            placeholder="เช่น เชน,ปักเป้า"
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-green-500/50"
+          />
+          <p className="text-xs text-muted-foreground mt-0.5">
+            ระบบจะแบ่งรายได้เท่ากันให้ทุกคนในรายการนี้ เมื่ออนุมัติออเดอร์ — ปล่อยว่างเพื่อไม่แบ่ง
+          </p>
         </div>
       </div>
 
@@ -989,6 +1097,403 @@ function LoginView({ onLogin }: { onLogin: (token: string) => void }) {
   );
 }
 
+interface FinanceEntry {
+  id: number;
+  amount: string;
+  description: string;
+  admin_name: string;
+  entry_type: string;
+  order_id: number | null;
+  created_at: string;
+}
+
+interface FinanceSummary {
+  total_balance: number;
+  admin_balances: Record<string, number>;
+  daily_chart: { date: string; amount: number }[];
+  monthly_goal: number;
+}
+
+function AddEntryModal({
+  token,
+  onClose,
+  defaultType = "income",
+}: {
+  token: string;
+  onClose: () => void;
+  defaultType?: "income" | "withdrawal";
+}) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    amount: "",
+    description: "",
+    admin_name: "",
+    entry_type: defaultType,
+  });
+  const [error, setError] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (!form.amount || !form.description || !form.admin_name)
+        throw new Error("กรุณากรอกข้อมูลให้ครบ");
+      const amount =
+        form.entry_type === "withdrawal"
+          ? -Math.abs(parseFloat(form.amount))
+          : Math.abs(parseFloat(form.amount));
+      const res = await fetch("/api/admin/finance/entries", {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify({ ...form, amount }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "บันทึกไม่สำเร็จ");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["finance-summary"] });
+      qc.invalidateQueries({ queryKey: ["finance-entries"] });
+      onClose();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="bg-card border-border max-w-sm">
+        <DialogHeader>
+          <DialogTitle>
+            {form.entry_type === "withdrawal" ? "💸 บันทึกการถอนเงิน" : "💰 บันทึกรายได้"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex rounded-lg overflow-hidden border border-border">
+            <button
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${form.entry_type === "income" ? "bg-green-600 text-white" : "bg-muted text-muted-foreground"}`}
+              onClick={() => setForm((f) => ({ ...f, entry_type: "income" }))}
+            >
+              + รายได้
+            </button>
+            <button
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${form.entry_type === "withdrawal" ? "bg-red-600 text-white" : "bg-muted text-muted-foreground"}`}
+              onClick={() => setForm((f) => ({ ...f, entry_type: "withdrawal" }))}
+            >
+              − ถอนเงิน
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">จำนวนเงิน (฿)</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="เช่น 219"
+              value={form.amount}
+              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">รายละเอียด</label>
+            <input
+              type="text"
+              placeholder="เช่น กลุ่มเด็กรับของทรู"
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">แอดมิน</label>
+            <input
+              type="text"
+              placeholder="เช่น เชน หรือ ปักเป้า"
+              value={form.admin_name}
+              onChange={(e) => setForm((f) => ({ ...f, admin_name: e.target.value }))}
+              className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+            />
+          </div>
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} className="flex-1">ยกเลิก</Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+              className="flex-1 font-bold bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {mutation.isPending ? "กำลังบันทึก..." : "บันทึก"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FinanceTab({ token }: { token: string }) {
+  const qc = useQueryClient();
+  const [showAdd, setShowAdd] = useState(false);
+  const [addType, setAddType] = useState<"income" | "withdrawal">("income");
+  const [deleteEntryId, setDeleteEntryId] = useState<number | null>(null);
+  const [goalInput, setGoalInput] = useState("");
+  const [goalSaved, setGoalSaved] = useState(false);
+
+  const { data: summary, isLoading: summaryLoading } = useQuery<FinanceSummary>({
+    queryKey: ["finance-summary"],
+    queryFn: () =>
+      fetch("/api/admin/finance/summary", { headers: authHeaders(token) }).then((r) => r.json()),
+    refetchInterval: 60000,
+  });
+
+  const { data: entries = [], isLoading: entriesLoading } = useQuery<FinanceEntry[]>({
+    queryKey: ["finance-entries"],
+    queryFn: () =>
+      fetch("/api/admin/finance/entries", { headers: authHeaders(token) }).then((r) => r.json()),
+    refetchInterval: 60000,
+  });
+
+  const deleteEntryMutation = useMutation({
+    mutationFn: (id: number) =>
+      fetch(`/api/admin/finance/entries/${id}`, { method: "DELETE", headers: authHeaders(token) }).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["finance-summary"] });
+      qc.invalidateQueries({ queryKey: ["finance-entries"] });
+      setDeleteEntryId(null);
+    },
+  });
+
+  const goalMutation = useMutation({
+    mutationFn: () =>
+      fetch("/api/admin/finance/goal", {
+        method: "PUT",
+        headers: authHeaders(token),
+        body: JSON.stringify({ goal: parseFloat(goalInput) || 0 }),
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["finance-summary"] });
+      setGoalSaved(true);
+      setTimeout(() => setGoalSaved(false), 2000);
+    },
+  });
+
+  const totalBalance = summary?.total_balance ?? 0;
+  const monthlyGoal = summary?.monthly_goal ?? 0;
+  const goalPct = monthlyGoal > 0 ? Math.min(100, (totalBalance / monthlyGoal) * 100) : 0;
+  const adminBalances = summary?.admin_balances ?? {};
+  const dailyChart = summary?.daily_chart ?? [];
+  const maxChart = Math.max(...dailyChart.map((d) => Math.abs(d.amount)), 1);
+
+  const fmtMoney = (n: number) =>
+    `฿${Math.abs(n).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+  const fmtDate = (s: string) => {
+    const d = new Date(s);
+    return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+  };
+
+  if (summaryLoading) {
+    return (
+      <div className="space-y-3">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-28 bg-card border border-border rounded-xl animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5 max-w-2xl">
+      {deleteEntryId !== null && (
+        <ConfirmDialog
+          title="ลบรายการนี้?"
+          description="รายการนี้จะถูกลบถาวร ยอดเงินจะถูกปรับตามไปด้วย"
+          confirmLabel={deleteEntryMutation.isPending ? "กำลังลบ..." : "ลบรายการ"}
+          onConfirm={() => deleteEntryMutation.mutate(deleteEntryId)}
+          onCancel={() => setDeleteEntryId(null)}
+        />
+      )}
+
+      {showAdd && (
+        <AddEntryModal
+          token={token}
+          onClose={() => setShowAdd(false)}
+          defaultType={addType}
+        />
+      )}
+
+      {/* Balance Card */}
+      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg, #1a2a5e 0%, #1e3a8a 60%, #1d4ed8 100%)" }}>
+        <p className="text-sm text-blue-200 mb-1">ยอดเงินรวม (Balance)</p>
+        <p className="text-4xl font-bold mb-3">{fmtMoney(totalBalance)}</p>
+        {monthlyGoal > 0 && (
+          <>
+            <div className="w-full bg-white/20 rounded-full h-2 mb-1">
+              <div
+                className="h-2 rounded-full bg-blue-300 transition-all"
+                style={{ width: `${goalPct}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-blue-200">
+              <span>ความคืบหน้า {goalPct.toFixed(1)}%</span>
+              <span>เป้าหมาย: {fmtMoney(monthlyGoal)}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Admin Split */}
+      {Object.keys(adminBalances).length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-semibold text-foreground">สัดส่วนแอดมิน</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {Object.entries(adminBalances).map(([name, bal]) => (
+              <div key={name} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                    {name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-sm text-foreground">{name}</span>
+                </div>
+                <span className={`font-bold text-sm ${bal >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {bal >= 0 ? "+" : ""}{fmtMoney(bal)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Daily Chart */}
+      {dailyChart.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <p className="text-sm font-semibold text-foreground mb-3">สถิติ 7 วันย้อนหลัง</p>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={dailyChart} barSize={28}>
+              <XAxis
+                dataKey="date"
+                tick={{ fill: "#94a3b8", fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis hide />
+              <Tooltip
+                contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: "#94a3b8" }}
+                formatter={(v: number) => [`฿${Math.abs(v).toLocaleString()}`, "ยอด"]}
+              />
+              <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+                {dailyChart.map((entry, idx) => (
+                  <Cell
+                    key={idx}
+                    fill={entry.amount >= 0 ? "#3b82f6" : "#ef4444"}
+                    fillOpacity={0.85}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex gap-2">
+        <Button
+          onClick={() => { setAddType("income"); setShowAdd(true); }}
+          className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold gap-2"
+        >
+          <TrendingUp size={15} /> เพิ่มรายได้
+        </Button>
+        <Button
+          onClick={() => { setAddType("withdrawal"); setShowAdd(true); }}
+          className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold gap-2"
+        >
+          <TrendingDown size={15} /> ถอนเงิน
+        </Button>
+      </div>
+
+      {/* Monthly Goal Setting */}
+      <div className="bg-card border border-border rounded-xl p-4">
+        <p className="text-sm font-semibold text-foreground mb-3">🎯 เป้าหมายรายเดือน</p>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            placeholder={monthlyGoal > 0 ? String(monthlyGoal) : "เช่น 2500"}
+            value={goalInput}
+            onChange={(e) => setGoalInput(e.target.value)}
+            className="flex-1 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+          <Button
+            onClick={() => goalMutation.mutate()}
+            disabled={goalMutation.isPending || !goalInput}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold px-4"
+          >
+            {goalSaved ? "✓ บันทึกแล้ว" : "บันทึก"}
+          </Button>
+        </div>
+        {monthlyGoal > 0 && (
+          <p className="text-xs text-muted-foreground mt-1.5">เป้าหมายปัจจุบัน: {fmtMoney(monthlyGoal)}</p>
+        )}
+      </div>
+
+      {/* Transaction List */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <p className="text-sm font-semibold text-foreground">รายการธุรกรรม</p>
+          <span className="text-xs text-muted-foreground">{entries.length} รายการ</span>
+        </div>
+        {entriesLoading ? (
+          <div className="p-4 space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-10 bg-muted animate-pulse rounded-lg" />
+            ))}
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="py-12 text-center text-muted-foreground text-sm">
+            <Wallet size={28} className="mx-auto mb-2 opacity-30" />
+            ยังไม่มีรายการ กดเพิ่มรายได้เพื่อเริ่มต้น
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {entries.map((entry) => {
+              const amt = parseFloat(entry.amount);
+              const isPos = amt >= 0;
+              return (
+                <div key={entry.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isPos ? "bg-green-500/20" : "bg-red-500/20"}`}>
+                    {isPos ? (
+                      <TrendingUp size={14} className="text-green-400" />
+                    ) : (
+                      <TrendingDown size={14} className="text-red-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-foreground truncate">{entry.description}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {fmtDate(entry.created_at)} · {entry.admin_name}
+                      {entry.order_id && <span className="ml-1 text-muted-foreground/60">· ออเดอร์ #{entry.order_id}</span>}
+                    </p>
+                  </div>
+                  <span className={`font-bold text-sm shrink-0 ${isPos ? "text-green-400" : "text-red-400"}`}>
+                    {isPos ? "+" : ""}{fmtMoney(amt)}
+                  </span>
+                  <button
+                    onClick={() => setDeleteEntryId(entry.id)}
+                    className="text-muted-foreground hover:text-red-400 transition-colors shrink-0 ml-1"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPanel() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("admin_token"));
 
@@ -1024,6 +1529,9 @@ export default function AdminPanel() {
             <TabsTrigger value="orders" className="gap-2">
               <ClipboardList size={14} /> ออเดอร์
             </TabsTrigger>
+            <TabsTrigger value="finance" className="gap-2">
+              <Wallet size={14} /> การเงิน
+            </TabsTrigger>
             <TabsTrigger value="announcements" className="gap-2">
               <Megaphone size={14} /> ประกาศ
             </TabsTrigger>
@@ -1036,6 +1544,9 @@ export default function AdminPanel() {
           </TabsContent>
           <TabsContent value="orders">
             <OrdersTab token={token} />
+          </TabsContent>
+          <TabsContent value="finance">
+            <FinanceTab token={token} />
           </TabsContent>
           <TabsContent value="announcements">
             <AnnouncementsTab token={token} />
