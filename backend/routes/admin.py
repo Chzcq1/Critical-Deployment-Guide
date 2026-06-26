@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from backend.database import get_db
 from backend.models import Product, Order, OTPSession, StoreSettings
 from backend.schemas import (
@@ -65,7 +65,7 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="รหัสผ่านไม่ถูกต้อง")
 
     otp = generate_otp()
-    expires = datetime.utcnow() + timedelta(minutes=5)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=5)
     session = OTPSession(
         telegram_id=ADMIN_SESSION_ID,
         otp_code=otp,
@@ -89,7 +89,7 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
             OTPSession.telegram_id == ADMIN_SESSION_ID,
             OTPSession.otp_code == body.otp_code,
             OTPSession.is_used == False,
-            OTPSession.expires_at > datetime.utcnow(),
+            OTPSession.expires_at > datetime.now(timezone.utc),
         )
         .order_by(OTPSession.created_at.desc())
         .first()
