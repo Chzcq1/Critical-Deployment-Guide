@@ -5,6 +5,7 @@ from backend.config import get_settings
 logger = logging.getLogger(__name__)
 
 # slip2go.com — base URL (no subdomain)
+# Endpoint ref: https://slip2go.com/guide → verify-slip/qr-base64/info
 SLIP2GO_BASE = "https://slip2go.com"
 AMOUNT_TOLERANCE = 0.01
 
@@ -62,7 +63,7 @@ async def verify_slip(
     if "," in img_data:
         img_data = img_data.split(",", 1)[1]
 
-    url = f"{SLIP2GO_BASE}/api/verify-slip/base64"
+    url = f"{SLIP2GO_BASE}/api/verify-slip/qr-base64/info"
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
