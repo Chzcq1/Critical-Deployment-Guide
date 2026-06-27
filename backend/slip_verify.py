@@ -5,11 +5,11 @@ from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Slip2Go API — correct base URL is api.slip2go.com (NOT app.slip2go.com)
+# Slip2Go API — correct base URL is connect.slip2go.com
 # Endpoint: POST {base}/api/verify-slip/base64/info
 # Auth:  Authorization: Bearer {SLIP2GO_API_KEY}
 # Body:  {"image": "<base64_string>"}  (with or without data URI prefix)
-SLIP2GO_BASE = os.environ.get("SLIP2GO_API_URL", "https://api.slip2go.com").rstrip("/")
+SLIP2GO_BASE = os.environ.get("SLIP2GO_API_URL", "https://connect.slip2go.com").rstrip("/")
 
 AMOUNT_TOLERANCE = 0.01
 
