@@ -5,17 +5,54 @@ from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Slip2Go API — correct base URL is connect.slip2go.com
-# Endpoint: POST {base}/api/verify-slip/base64/info
-# Auth:  Authorization: Bearer {SLIP2GO_API_KEY}
-# Body:  {"image": "<base64_string>"}  (with or without data URI prefix)
+# Slip2Go API (confirmed from official docs)
+# Endpoint : POST https://connect.slip2go.com/api/verify-slip/qr-base64/info
+# Auth     : Authorization: Bearer {secretKey}
+# Body     : {"payload": {"imageBase64": "data:image/jpeg;base64,..."}}
+# Response : HTTP always 200; success determined by numeric `code` field
 SLIP2GO_BASE = os.environ.get("SLIP2GO_API_URL", "https://connect.slip2go.com").rstrip("/")
 
 AMOUNT_TOLERANCE = 0.01
 
+# Slip2Go numeric response codes
+SUCCESS_CODES = {"200000", "200001", "200200", "200202"}
+CODE_MAP = {
+    "200401": ("wrong_receiver",    "บัญชีผู้รับไม่ถูกต้อง"),
+    "200402": ("amount_mismatch",   "ยอดโอนเงินไม่ตรงเงื่อนไข"),
+    "200403": ("date_mismatch",     "วันที่โอนไม่ตรงเงื่อนไข"),
+    "200404": ("not_found",         "ไม่พบข้อมูลสลิปในระบบธนาคาร"),
+    "200500": ("fraud",             "สลิปเสีย / สลิปปลอม"),
+    "200501": ("duplicate",         "สลิปซ้ำ"),
+    "200502": ("bank_error",        "Error จากธนาคาร กรุณาลองใหม่"),
+}
+
+
+def _clean_no(s: str) -> str:
+    return s.replace("-", "").replace(" ", "").strip()
+
+
+def _parse_name(party: dict) -> str | None:
+    if not party:
+        return None
+    return party.get("name") or party.get("displayName")
+
+
+def _parse_bank(party: dict) -> str | None:
+    if not party:
+        return None
+    bank = party.get("bank") or {}
+    return bank.get("name") or bank.get("id")
+
+
+def _parse_account_no(party: dict) -> str | None:
+    if not party:
+        return None
+    acct = party.get("account") or {}
+    # accountNumber may be nested under account or at party level
+    return acct.get("accountNumber") or acct.get("value") or party.get("accountNumber")
+
 
 def _parse_amount(amount_field) -> float | None:
-    """Slip2Go returns amount as nested object: {amount: 500.0, local: {...}}"""
     if amount_field is None:
         return None
     if isinstance(amount_field, (int, float)):
@@ -30,33 +67,6 @@ def _parse_amount(amount_field) -> float | None:
     return None
 
 
-def _parse_name(party: dict) -> str | None:
-    """Extract display name from sender/receiver object."""
-    if not party:
-        return None
-    return party.get("displayName") or party.get("name")
-
-
-def _parse_bank(party: dict) -> str | None:
-    """Extract bank name from sender/receiver object."""
-    if not party:
-        return None
-    bank = party.get("bank") or {}
-    return bank.get("name") or bank.get("id")
-
-
-def _parse_account_value(party: dict) -> str | None:
-    """Extract account number from sender/receiver object."""
-    if not party:
-        return None
-    acct = party.get("account") or {}
-    return acct.get("value") or acct.get("name")
-
-
-def _clean_no(s: str) -> str:
-    return s.replace("-", "").replace(" ", "").strip()
-
-
 async def verify_slip(
     base64_image: str,
     expected_amount: float | None = None,
@@ -64,10 +74,12 @@ async def verify_slip(
     bank_code: str | None = None,
 ) -> dict:
     """
-    Verify a Thai bank slip using Slip2Go API.
+    Verify a Thai bank slip via Slip2Go API.
 
-    Correct endpoint: POST https://api.slip2go.com/api/verify-slip/base64/info
-    Response uses top-level `success` boolean field.
+    Endpoint : POST https://connect.slip2go.com/api/verify-slip/qr-base64/info
+    Body     : {"payload": {"imageBase64": "data:image/jpeg;base64,..."}}
+    Auth     : Authorization: Bearer {SLIP2GO_API_KEY}
+    Response : HTTP 200 always; success = code in {200000, 200001, 200200, 200202}
     """
     settings = get_settings()
     api_key = settings.slip2go_api_key
@@ -85,12 +97,12 @@ async def verify_slip(
         return {**base_result, "success": False, "status": "no_config",
                 "error_message": "SLIP2GO_API_KEY ยังไม่ได้ตั้งค่าใน Secrets"}
 
-    # Strip data URI prefix if present — API accepts both forms
+    # Slip2Go requires the full data URI prefix (data:image/jpeg;base64,...)
     img_data = base64_image
-    if "," in img_data:
-        img_data = img_data.split(",", 1)[1]
+    if not img_data.startswith("data:"):
+        img_data = f"data:image/jpeg;base64,{img_data}"
 
-    url = f"{SLIP2GO_BASE}/api/verify-slip/base64/info"
+    url = f"{SLIP2GO_BASE}/api/verify-slip/qr-base64/info"
     logger.info(f"Slip2Go: POST {url}")
 
     try:
@@ -101,7 +113,7 @@ async def verify_slip(
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json={"image": img_data},
+                json={"payload": {"imageBase64": img_data}},
             )
             logger.info(f"Slip2Go HTTP {resp.status_code} | body_len={len(resp.text)}")
 
@@ -132,31 +144,26 @@ async def verify_slip(
         return {**base_result, "success": False, "status": "error",
                 "error_message": f"เชื่อมต่อ Slip2Go ไม่ได้: {e}"}
 
-    logger.info(f"Slip2Go response success={data.get('success')} code={data.get('code')} msg={data.get('message')}")
+    code = str(data.get("code", ""))
+    logger.info(f"Slip2Go response code={code} msg={data.get('message')}")
 
-    # ── Parse response ────────────────────────────────────────────────────────
-    # Slip2Go API uses top-level `success` boolean (not numeric code field)
-    api_success: bool = bool(data.get("success", False))
+    # ── Parse slip data ───────────────────────────────────────────────────────
     slip_data = data.get("data") or {}
 
-    # Amount — returned as nested object {amount: 500.0, local: {...}}
     slip_amount = _parse_amount(slip_data.get("amount"))
-
     amount_match: bool | None = None
     if expected_amount is not None and slip_amount is not None:
         amount_match = abs(slip_amount - float(expected_amount)) <= AMOUNT_TOLERANCE
 
-    # Sender & Receiver
-    sender = slip_data.get("sender") or {}
+    sender   = slip_data.get("sender") or {}
     receiver = slip_data.get("receiver") or {}
 
-    sender_name = _parse_name(sender)
-    sender_bank = _parse_bank(sender)
+    sender_name   = _parse_name(sender)
+    sender_bank   = _parse_bank(sender)
     receiver_name = _parse_name(receiver)
     receiver_bank = _parse_bank(receiver)
-    masked_acct = _parse_account_value(receiver)
+    masked_acct   = _parse_account_no(receiver)
 
-    # Receiver account matching (best-effort against masked digits)
     receiver_match: bool | None = None
     receiver_checked = bool(bank_account)
     if bank_account and masked_acct:
@@ -169,8 +176,8 @@ async def verify_slip(
             if len(digits) >= 4:
                 receiver_match = clean_conf.endswith(digits[-4:])
 
-    # date field name in Slip2Go is "date" (not "dateTime")
-    date_time = slip_data.get("date") or slip_data.get("dateTime") or slip_data.get("transDate")
+    date_time = (slip_data.get("transDate") or slip_data.get("date")
+                 or slip_data.get("dateTime") or slip_data.get("transferDate"))
 
     result = {
         **base_result,
@@ -188,25 +195,18 @@ async def verify_slip(
         "receiver_bank": receiver_bank,
     }
 
-    if api_success:
+    if code in SUCCESS_CODES:
         result.update({"success": True, "status": "verified", "error_message": None})
     else:
-        # Map error code/message from response
-        code = str(data.get("code") or "")
-        msg = data.get("message") or f"ตรวจสอบไม่สำเร็จ (code: {code})"
-        CODE_STATUS_MAP = {
-            "WRONG_RECEIVER": "wrong_receiver",
-            "AMOUNT_MISMATCH": "amount_mismatch",
-            "DATE_MISMATCH": "date_mismatch",
-            "SLIP_NOT_FOUND": "not_found",
-            "FRAUD": "fraud",
-            "DUPLICATE": "duplicate",
-        }
-        status = CODE_STATUS_MAP.get(code.upper(), "failed")
+        if code in CODE_MAP:
+            status, msg = CODE_MAP[code]
+        else:
+            status = "failed"
+            msg = data.get("message") or f"ตรวจสอบไม่สำเร็จ (code: {code})"
         result.update({"success": False, "status": status, "error_message": msg})
 
     logger.info(
-        f"Slip2Go result: success={api_success} status={result['status']} "
+        f"Slip2Go result: code={code} status={result['status']} "
         f"amount={slip_amount} expected={expected_amount} match={amount_match} "
         f"sender={sender_name} receiver={receiver_name} transRef={result['trans_ref']}"
     )
