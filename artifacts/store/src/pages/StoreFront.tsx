@@ -806,11 +806,15 @@ export default function StoreFront() {
       {announcement && (
         <button
           onClick={() => setLocation("/announcements")}
-          className="w-full bg-yellow-500/10 border-b border-yellow-500/30 hover:bg-yellow-500/15 transition-colors text-left"
+          className="w-full bg-yellow-500/10 border-b border-yellow-500/30 hover:bg-yellow-500/15 transition-colors text-left overflow-hidden"
         >
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
-            <Megaphone size={16} className="text-yellow-400 shrink-0" />
-            <p className="text-sm text-yellow-200 line-clamp-1 flex-1">{announcement}</p>
+          <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
+            <Megaphone size={15} className="text-yellow-400 shrink-0" />
+            <div className="flex-1 overflow-hidden">
+              <span className="animate-marquee text-sm text-yellow-200">
+                {announcement}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{announcement}
+              </span>
+            </div>
             <ChevronRight size={14} className="text-yellow-400/60 shrink-0" />
           </div>
         </button>

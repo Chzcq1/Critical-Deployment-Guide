@@ -208,6 +208,7 @@ class AnnouncementResponse(BaseModel):
     images: Optional[str] = None
     font_size: str
     is_active: bool
+    sort_order: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

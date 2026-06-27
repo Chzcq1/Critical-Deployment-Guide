@@ -54,6 +54,8 @@ def _run_migrations(engine):
         # slip verify columns
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS slip_verify_status VARCHAR(20)",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS slip_verify_result TEXT",
+        # sort_order for announcements
+        "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

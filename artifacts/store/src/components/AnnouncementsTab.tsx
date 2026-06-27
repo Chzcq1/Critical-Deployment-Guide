@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2, Megaphone, ImagePlus, X, ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { Plus, Pencil, Trash2, Megaphone, ImagePlus, X, ChevronLeft, ChevronRight, Eye, EyeOff, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -12,6 +12,7 @@ interface Announcement {
   images: string | null;
   font_size: string;
   is_active: boolean;
+  sort_order: number;
   created_at: string | null;
 }
 
@@ -295,6 +296,15 @@ export default function AnnouncementsTab({ token }: { token: string }) {
     },
   });
 
+  const moveMutation = useMutation({
+    mutationFn: ({ id, direction }: { id: number; direction: "up" | "down" }) =>
+      fetch(`/api/admin/announcements/${id}/move?direction=${direction}`, { method: "POST", headers: authHeaders(token) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-announcements"] });
+      qc.invalidateQueries({ queryKey: ["announcements"] });
+    },
+  });
+
   return (
     <div>
       <div className="flex justify-between items-center mb-5">
@@ -321,7 +331,7 @@ export default function AnnouncementsTab({ token }: { token: string }) {
       ) : (
         <div className="space-y-3">
           <AnimatePresence>
-            {announcements.map((ann) => {
+            {announcements.map((ann, idx) => {
               let images: string[] = [];
               try { if (ann.images) images = JSON.parse(ann.images); } catch {}
 
@@ -333,7 +343,23 @@ export default function AnnouncementsTab({ token }: { token: string }) {
                   exit={{ opacity: 0, y: -8 }}
                   className={`bg-card border rounded-xl overflow-hidden transition-colors ${ann.is_active ? "border-border hover:border-primary/30" : "border-border/50 opacity-60"}`}
                 >
-                  <div className="flex gap-3 p-4">
+                  <div className="flex gap-2 p-4">
+                    <div className="flex flex-col gap-0.5 justify-center shrink-0">
+                      <button
+                        onClick={() => moveMutation.mutate({ id: ann.id, direction: "up" })}
+                        disabled={idx === 0 || moveMutation.isPending}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ArrowUp size={13} />
+                      </button>
+                      <button
+                        onClick={() => moveMutation.mutate({ id: ann.id, direction: "down" })}
+                        disabled={idx === announcements.length - 1 || moveMutation.isPending}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ArrowDown size={13} />
+                      </button>
+                    </div>
                     {images.length > 0 && (
                       <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-border bg-muted">
                         <img src={images[0]} alt="" className="w-full h-full object-cover" />

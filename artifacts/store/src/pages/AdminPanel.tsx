@@ -482,16 +482,16 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
   let parsed: Record<string, unknown> = {};
   try { if (result) parsed = JSON.parse(result); } catch {}
 
-  const cfg: Record<string, { label: string; pill: string; bar: string; icon: string }> = {
-    verified:       { label: "ยืนยันสลีปแล้ว",    pill: "bg-green-500/15 text-green-400 border-green-500/30",   bar: "border-l-green-500",   icon: "✅" },
-    wrong_receiver: { label: "บัญชีผู้รับไม่ตรง",  pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500",     icon: "🏦" },
-    duplicate:      { label: "สลีปซ้ำ",             pill: "bg-orange-500/15 text-orange-400 border-orange-500/30",bar: "border-l-orange-500",  icon: "⚠️" },
-    no_qr:          { label: "อ่าน QR ไม่ได้",      pill: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",bar: "border-l-yellow-500",  icon: "📷" },
-    failed:         { label: "ตรวจไม่ผ่าน",         pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500",     icon: "❌" },
-    error:          { label: "เชื่อมต่อล้มเหลว",    pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500",     icon: "🔌" },
-    no_config:      { label: "ยังไม่ตั้งค่า API",   pill: "bg-muted text-muted-foreground border-border",         bar: "border-l-border",      icon: "⚙️" },
+  const cfg: Record<string, { label: string; pill: string; bar: string }> = {
+    verified:       { label: "ยืนยันสลีปแล้ว",    pill: "bg-green-500/15 text-green-400 border-green-500/30",   bar: "border-l-green-500"   },
+    wrong_receiver: { label: "บัญชีผู้รับไม่ตรง",  pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500"     },
+    duplicate:      { label: "สลีปซ้ำ",             pill: "bg-orange-500/15 text-orange-400 border-orange-500/30",bar: "border-l-orange-500"  },
+    no_qr:          { label: "อ่าน QR ไม่ได้",      pill: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",bar: "border-l-yellow-500"  },
+    failed:         { label: "ตรวจไม่ผ่าน",         pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500"     },
+    error:          { label: "เชื่อมต่อล้มเหลว",    pill: "bg-red-500/15 text-red-400 border-red-500/30",         bar: "border-l-red-500"     },
+    no_config:      { label: "ยังไม่ตั้งค่า API",   pill: "bg-muted text-muted-foreground border-border",         bar: "border-l-border"      },
   };
-  const c = cfg[status] ?? { label: status, pill: "bg-muted text-muted-foreground border-border", bar: "border-l-border", icon: "❓" };
+  const c = cfg[status] ?? { label: status, pill: "bg-muted text-muted-foreground border-border", bar: "border-l-border" };
 
   const amount         = parsed.amount        as number  | null | undefined;
   const expectedAmount = parsed.expected_amount as number | null | undefined;
@@ -518,9 +518,9 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
       {/* ── status pill + toggle ── */}
       <button
         onClick={() => hasDetail && setExpanded(v => !v)}
-        className={`inline-flex items-center gap-1.5 self-start px-2 py-0.5 rounded-full text-xs font-semibold border ${c.pill} ${hasDetail ? "cursor-pointer hover:opacity-80 transition-opacity" : "cursor-default"}`}
+        className={`inline-flex items-center gap-1.5 self-start px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${c.pill} ${hasDetail ? "cursor-pointer hover:opacity-80 transition-opacity" : "cursor-default"}`}
       >
-        {c.icon} {c.label}
+        {c.label}
         {hasDetail && <span className="opacity-50 text-[9px]">{expanded ? "▲" : "▼"}</span>}
       </button>
 
@@ -528,11 +528,11 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
       {status === "verified" && amount != null && (
         <div className="flex flex-wrap gap-1.5 text-[11px]">
           <span className={`px-1.5 py-0.5 rounded border font-medium ${amountMatch === false ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-green-500/10 text-green-400 border-green-500/30"}`}>
-            💰 {Number(amount).toLocaleString("th-TH")} บาท{amountMatch === false ? " ⚠️ ยอดไม่ตรง" : amountMatch === true ? " ✓" : ""}
+            {Number(amount).toLocaleString("th-TH")} บาท{amountMatch === false ? " — ยอดไม่ตรง" : amountMatch === true ? " — ตรง" : ""}
           </span>
           {senderName && (
             <span className="px-1.5 py-0.5 rounded border bg-muted text-foreground border-border">
-              👤 {senderName}{senderBank ? ` · ${senderBank}` : ""}
+              {senderName}{senderBank ? ` · ${senderBank}` : ""}
             </span>
           )}
         </div>
@@ -540,7 +540,7 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
 
       {/* ── amount mismatch pill on non-verified ── */}
       {status !== "verified" && amountMatch === false && (
-        <span className="self-start text-[11px] px-1.5 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/30">❌ ยอดไม่ตรง</span>
+        <span className="self-start text-[11px] px-1.5 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/30">ยอดไม่ตรง</span>
       )}
 
       {/* ── expandable detail card ── */}
@@ -559,8 +559,8 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
                   (ราคาสินค้า {Number(expectedAmount).toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท)
                 </span>
               )}
-              {amountMatch === true  && <span className="text-green-400 text-[10px] font-medium">✅ ตรง</span>}
-              {amountMatch === false && <span className="text-red-400   text-[10px] font-medium">❌ ไม่ตรง</span>}
+              {amountMatch === true  && <span className="text-green-400 text-[10px] font-medium">ตรง</span>}
+              {amountMatch === false && <span className="text-red-400   text-[10px] font-medium">ไม่ตรง</span>}
             </div>
           )}
 
@@ -579,8 +579,8 @@ function SlipVerifyBadge({ status, result }: { status: string | null; result: st
               <span className="text-muted-foreground w-16 shrink-0">ผู้รับ</span>
               <span className="text-foreground font-medium">{rcvName}</span>
               {rcvBank && <span className="text-muted-foreground text-[10px]">{rcvBank}</span>}
-              {rcvChecked && rcvMatch === true  && <span className="text-green-400 text-[10px]">✅ ตรง</span>}
-              {rcvChecked && rcvMatch === false && <span className="text-red-400   text-[10px]">❌ ไม่ตรง</span>}
+              {rcvChecked && rcvMatch === true  && <span className="text-green-400 text-[10px]">ตรง</span>}
+              {rcvChecked && rcvMatch === false && <span className="text-red-400   text-[10px]">ไม่ตรง</span>}
             </div>
           )}
 
@@ -912,7 +912,7 @@ function OrdersTab({ token }: { token: string }) {
                         <StatusBadge status={o.status} />
                         {o.status === "approved" && (
                           <span className={`text-xs ${o.link_sent ? "text-green-400" : "text-yellow-400"}`}>
-                            {o.link_sent ? "✓ ส่งลิงก์แล้ว" : "⚠ ยังไม่ได้ส่งลิงก์"}
+                            {o.link_sent ? "ส่งลิงก์แล้ว" : "ยังไม่ได้ส่งลิงก์"}
                           </span>
                         )}
                       </div>
@@ -954,7 +954,7 @@ function OrdersTab({ token }: { token: string }) {
                               variant="outline"
                               disabled={verifyMutation.isPending && verifyMutation.variables === o.id}
                               onClick={() => verifyMutation.mutate(o.id)}
-                              className="text-xs h-7 px-2.5 gap-1 border-primary/40 text-primary hover:bg-primary/10 w-fit"
+                              className="text-xs h-7 px-2.5 gap-1 border-primary/40 text-primary hover:bg-primary/10 whitespace-nowrap"
                             >
                               {verifyMutation.isPending && verifyMutation.variables === o.id
                                 ? <Loader size={11} className="animate-spin" />
@@ -1847,7 +1847,7 @@ function FinanceTab({ token }: { token: string }) {
 
       {/* Monthly Goal Setting */}
       <div className="bg-card border border-border rounded-xl p-4">
-        <p className="text-sm font-semibold text-foreground mb-3">🎯 เป้าหมายรายเดือน</p>
+        <p className="text-sm font-semibold text-foreground mb-3">เป้าหมายรายเดือน</p>
         <div className="flex gap-2">
           <input
             type="number"
@@ -1978,23 +1978,25 @@ export default function AdminPanel() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         <Tabs defaultValue="products">
-          <TabsList className="bg-muted mb-6 flex-wrap h-auto gap-1">
-            <TabsTrigger value="products" className="gap-2">
-              <Package size={14} /> สินค้า
-            </TabsTrigger>
-            <TabsTrigger value="orders" className="gap-2">
-              <ClipboardList size={14} /> ออเดอร์
-            </TabsTrigger>
-            <TabsTrigger value="finance" className="gap-2">
-              <Wallet size={14} /> การเงิน
-            </TabsTrigger>
-            <TabsTrigger value="announcements" className="gap-2">
-              <Megaphone size={14} /> ประกาศ
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="gap-2">
-              <Settings size={14} /> ตั้งค่าร้าน
-            </TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto mb-6 -mx-4 px-4">
+            <TabsList className="bg-muted h-auto gap-0.5 flex-nowrap w-max min-w-full">
+              <TabsTrigger value="products" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
+                <Package size={13} /> สินค้า
+              </TabsTrigger>
+              <TabsTrigger value="orders" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
+                <ClipboardList size={13} /> ออเดอร์
+              </TabsTrigger>
+              <TabsTrigger value="finance" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
+                <Wallet size={13} /> การเงิน
+              </TabsTrigger>
+              <TabsTrigger value="announcements" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
+                <Megaphone size={13} /> ประกาศ
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
+                <Settings size={13} /> ตั้งค่าร้าน
+              </TabsTrigger>
+            </TabsList>
+          </div>
           <TabsContent value="products">
             <ProductsTab token={token} />
           </TabsContent>
