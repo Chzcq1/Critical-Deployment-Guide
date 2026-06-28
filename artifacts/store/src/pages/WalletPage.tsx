@@ -164,6 +164,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
   const [otpBotUrl, setOtpBotUrl] = useState<string | null>(null);
   const [otpBotUsername, setOtpBotUsername] = useState<string | null>(null);
   const [otpInput, setOtpInput] = useState("");
+  const [isForgotPin, setIsForgotPin] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -201,6 +202,30 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     if (pollingRef.current) clearInterval(pollingRef.current);
     setStep("username"); setPin(""); setOtpInput(""); setError("");
     setSessionToken(""); setBotUrl(""); setVerifiedToken("");
+    setIsForgotPin(false);
+  };
+
+  const startForgotPin = async () => {
+    if (!username) return;
+    setLoading(true); setError(""); setIsForgotPin(true);
+    try {
+      const otpRes = await fetch("/api/wallet/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, mode: "reset" }),
+      });
+      const otpData = await otpRes.json();
+      if (!otpRes.ok) throw new Error(otpData.detail || "เกิดข้อผิดพลาด");
+      setSessionToken(otpData.session_token);
+      setBotUrl(otpData.bot_url);
+      setPin(""); setConfirmPin(""); setOtpInput("");
+      setStep("otp_wait");
+    } catch (e: any) {
+      setError(e.message);
+      setIsForgotPin(false);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const checkUser = async () => {
@@ -259,6 +284,30 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     if (step === "confirm_pin" && pin !== confirmPin) { setError("PIN ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง"); setConfirmPin(""); return; }
     if (step === "pin" && pin.length < 4) { setError("กรุณาใส่ PIN"); return; }
     setLoading(true); setError("");
+
+    // Forgot PIN path — call reset-pin, then drop back to login
+    if (isForgotPin && step === "confirm_pin") {
+      try {
+        const res = await fetch("/api/wallet/reset-pin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ verified_token: verifiedToken, new_pin: pin, confirm_pin: confirmPin }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
+        setIsForgotPin(false);
+        setVerifiedToken("");
+        setPin(""); setConfirmPin(""); setError("");
+        setStep("pin");
+      } catch (e: any) {
+        setError(e.message);
+        setConfirmPin("");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const res = await fetch("/api/wallet/auth", {
         method: "POST",
@@ -461,6 +510,13 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
                 <Button className="w-full" onClick={doAuth} disabled={pin.length < 4 || loading}>
                   {loading ? <Loader size={14} className="animate-spin" /> : "เข้าสู่กระเป๋า"}
                 </Button>
+                <button
+                  onClick={startForgotPin}
+                  disabled={loading}
+                  className="w-full text-xs text-primary/70 hover:text-primary text-center transition-colors"
+                >
+                  {loading ? "กำลังโหลด..." : "🔑 ลืม PIN? รีเซ็ทผ่าน OTP Telegram"}
+                </button>
                 <button onClick={() => { setStep("username"); setPin(""); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
                   ← เปลี่ยน Username
                 </button>
@@ -470,8 +526,10 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
             {/* ── STEP: create_pin ────────────────────────────────────────── */}
             {step === "create_pin" && (
               <>
-                <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 text-xs text-primary">
-                  <p className="font-medium mb-0.5">✅ ยืนยันตัวตนสำเร็จ! ตั้ง PIN ของคุณ</p>
+                <div className={`rounded-xl p-3 text-xs border ${isForgotPin ? "bg-amber-500/10 border-amber-500/20 text-amber-400" : "bg-primary/5 border-primary/20 text-primary"}`}>
+                  <p className="font-medium mb-0.5">
+                    {isForgotPin ? "🔑 ยืนยันตัวตนสำเร็จ! ตั้ง PIN ใหม่" : "✅ ยืนยันตัวตนสำเร็จ! ตั้ง PIN ของคุณ"}
+                  </p>
                   <p className="opacity-80">PIN ใช้ล็อคอินทุกครั้ง ตัวเลข 4–6 หลัก อย่าบอกใคร</p>
                 </div>
                 <div>
@@ -494,7 +552,9 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
                 </div>
                 {error && <p className="text-red-400 text-xs">{error}</p>}
                 <Button className="w-full" onClick={doAuth} disabled={confirmPin.length < 4 || loading}>
-                  {loading ? <Loader size={14} className="animate-spin" /> : "สร้างบัญชีและเข้าสู่ระบบ"}
+                  {loading
+                    ? <Loader size={14} className="animate-spin" />
+                    : isForgotPin ? "บันทึก PIN ใหม่" : "สร้างบัญชีและเข้าสู่ระบบ"}
                 </Button>
                 <button onClick={() => { setStep("create_pin"); setConfirmPin(""); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
                   ← แก้ไข PIN

@@ -78,12 +78,17 @@ def _normalize_username(raw: str) -> str:
 
 @router.post("/wallet/send-otp")
 def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
-    """Create an OTP session for a new wallet registration. Returns bot deep-link."""
+    """
+    Create an OTP session. Returns bot deep-link.
+    mode='register' (default) — new accounts only.
+    mode='reset'    — existing accounts with PIN (forgot PIN flow).
+    """
     import secrets as _secrets
     from datetime import datetime, timedelta, timezone
     from backend.models import WalletOTPSession
 
     username = _normalize_username(body.get("username", ""))
+    mode = str(body.get("mode", "register")).strip()
     settings = get_settings()
 
     otp_token = settings.otp_bot_token or settings.bot_token
@@ -96,8 +101,13 @@ def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
         )
 
     customer = db.query(Customer).filter(Customer.telegram_username == username).first()
-    if customer and customer.pin_hash:
-        raise HTTPException(status_code=400, detail="บัญชีนี้มี PIN อยู่แล้ว ไม่จำเป็นต้อง OTP")
+
+    if mode == "reset":
+        if not customer or not customer.pin_hash:
+            raise HTTPException(status_code=404, detail="ไม่พบบัญชีนี้ หรือยังไม่มี PIN")
+    else:
+        if customer and customer.pin_hash:
+            raise HTTPException(status_code=400, detail="บัญชีนี้มี PIN อยู่แล้ว ไม่จำเป็นต้อง OTP")
 
     db.query(WalletOTPSession).filter(
         WalletOTPSession.telegram_username == username,
@@ -185,6 +195,41 @@ def wallet_verify_otp(body: dict, db: Session = Depends(get_db)):
         algorithm=_JWT_ALG,
     )
     return {"verified": True, "verified_token": verified_token, "username": session.telegram_username}
+
+
+@router.post("/wallet/reset-pin")
+def wallet_reset_pin(body: dict, db: Session = Depends(get_db)):
+    """Reset PIN for an existing account after OTP verification."""
+    import hashlib as _hashlib
+
+    verified_token = str(body.get("verified_token", "")).strip()
+    new_pin = str(body.get("new_pin", "")).strip()
+    confirm_pin = str(body.get("confirm_pin", "")).strip()
+
+    if not new_pin or not new_pin.isdigit() or not (4 <= len(new_pin) <= 6):
+        raise HTTPException(status_code=400, detail="PIN ใหม่ต้องเป็นตัวเลข 4-6 หลัก")
+    if new_pin != confirm_pin:
+        raise HTTPException(status_code=400, detail="PIN ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง")
+    if not verified_token:
+        raise HTTPException(status_code=400, detail="ไม่พบ verified_token")
+
+    try:
+        payload = _jwt.decode(verified_token, _JWT_SECRET, algorithms=[_JWT_ALG])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token ไม่ถูกต้องหรือหมดอายุ กรุณาขอ OTP ใหม่")
+
+    if payload.get("type") != "wallet_otp_verified":
+        raise HTTPException(status_code=401, detail="Token ประเภทไม่ถูกต้อง")
+
+    username = payload.get("sub", "")
+    customer = db.query(Customer).filter(Customer.telegram_username == username).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="ไม่พบบัญชีผู้ใช้")
+
+    customer.pin_hash = _hashlib.sha256(new_pin.encode()).hexdigest()
+    db.commit()
+
+    return {"success": True, "message": "รีเซ็ท PIN สำเร็จ กรุณาล็อคอินด้วย PIN ใหม่"}
 
 
 # ── Public: check if account exists ──────────────────────────────────────────
