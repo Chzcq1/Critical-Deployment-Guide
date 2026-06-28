@@ -25,26 +25,6 @@ async def telegram_webhook(request: Request):
 
     update = Update.de_json(data, tg_bot)
 
-    # ── /start otp_TOKEN — wallet registration OTP ──────────────────────
-    if update.message and update.message.text:
-        text = update.message.text.strip()
-        if text.startswith("/start otp_") or text == "/start":
-            payload = text[len("/start "):].strip() if text != "/start" else ""
-            if payload.startswith("otp_"):
-                token = payload[len("otp_"):]
-                chat_id = update.message.chat.id
-                await _handle_wallet_otp_start(token, chat_id)
-            else:
-                chat_id = update.message.chat.id
-                try:
-                    await tg_bot.send_message(
-                        chat_id=chat_id,
-                        text="👋 สวัสดีครับ! บอทนี้ใช้สำหรับระบบกระเป๋าเครดิตของร้านค้า\n\nหากต้องการสมัครกระเป๋าเครดิต กรุณาไปที่หน้าเว็บร้านค้าและทำตามขั้นตอนครับ"
-                    )
-                except Exception:
-                    pass
-        return {"ok": True}
-
     # ── Inline keyboard callbacks (approve / reject) ────────────────────
     if update.callback_query:
         query = update.callback_query
@@ -192,7 +172,7 @@ async def _handle_wallet_otp_start(session_token: str, chat_id: int):
     except Exception as e:
         logger.error(f"Error in _handle_wallet_otp_start: {e}")
         try:
-            await bot_module.get_bot().send_message(
+            await bot_module.get_otp_bot().send_message(
                 chat_id=chat_id,
                 text="❌ เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้งครับ"
             )
@@ -200,3 +180,39 @@ async def _handle_wallet_otp_start(session_token: str, chat_id: int):
             pass
     finally:
         db.close()
+
+
+@router.post("/webhook-otp")
+async def telegram_otp_webhook(request: Request):
+    """Dedicated webhook endpoint for the OTP-only bot."""
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    try:
+        otp_bot = bot_module.get_otp_bot()
+    except RuntimeError:
+        return {"ok": True}
+
+    update = Update.de_json(data, otp_bot)
+
+    if update.message and update.message.text:
+        text = update.message.text.strip()
+        if text.startswith("/start"):
+            payload = text[len("/start"):].strip()
+            if payload.startswith("otp_"):
+                token = payload[len("otp_"):]
+                chat_id = update.message.chat.id
+                await _handle_wallet_otp_start(token, chat_id)
+            else:
+                chat_id = update.message.chat.id
+                try:
+                    await otp_bot.send_message(
+                        chat_id=chat_id,
+                        text="🔐 บอทนี้ใช้สำหรับยืนยันตัวตนกระเป๋าเครดิตเท่านั้น\n\nกรุณากลับไปที่หน้าเว็บร้านค้าและกดปุ่มรับ OTP ครับ"
+                    )
+                except Exception:
+                    pass
+
+    return {"ok": True}

@@ -100,9 +100,16 @@ async def lifespan(app: FastAPI):
             from backend import bot as bot_module
             await bot_module.setup_webhook(settings.webhook_url)
         except Exception as e:
-            logger.warning(f"Could not set webhook on startup: {e}")
+            logger.warning(f"Could not set main bot webhook on startup: {e}")
     else:
         logger.warning("BOT_TOKEN or WEBHOOK_URL not set — skipping webhook setup")
+
+    if settings.otp_bot_token and settings.webhook_url:
+        try:
+            from backend import bot as bot_module
+            await bot_module.setup_otp_webhook(settings.webhook_url)
+        except Exception as e:
+            logger.warning(f"Could not set OTP bot webhook on startup: {e}")
 
     yield
     logger.info("Shutting down")

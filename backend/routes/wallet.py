@@ -86,10 +86,13 @@ def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
     username = _normalize_username(body.get("username", ""))
     settings = get_settings()
 
-    if not settings.bot_token or not settings.bot_username:
+    otp_token = settings.otp_bot_token or settings.bot_token
+    otp_username = settings.otp_bot_username or settings.bot_username
+
+    if not otp_token or not otp_username:
         raise HTTPException(
             status_code=503,
-            detail="ระบบ OTP ยังไม่ได้ตั้งค่า BOT_TOKEN / BOT_USERNAME — กรุณาติดต่อแอดมิน"
+            detail="ระบบ OTP ยังไม่ได้ตั้งค่า OTP_BOT_TOKEN / OTP_BOT_USERNAME — กรุณาติดต่อแอดมิน"
         )
 
     customer = db.query(Customer).filter(Customer.telegram_username == username).first()
@@ -112,7 +115,7 @@ def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
     db.add(session)
     db.commit()
 
-    bot_url = f"https://t.me/{settings.bot_username}?start=otp_{token}"
+    bot_url = f"https://t.me/{otp_username}?start=otp_{token}"
     return {"session_token": token, "bot_url": bot_url}
 
 

@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     admin_passcode: Optional[str] = Field(default=None)
     admin_telegram_ids: Optional[str] = Field(default=None)
     slip2go_api_key: Optional[str] = Field(default=None)
+    otp_bot_token: Optional[str] = Field(default=None)
+    otp_bot_username: Optional[str] = Field(default=None)
 
     class Config:
         env_file = ".env"
