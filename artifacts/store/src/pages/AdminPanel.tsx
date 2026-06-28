@@ -1830,14 +1830,13 @@ function AddEntryModal({
   const [form, setForm] = useState({
     amount: "",
     description: "",
-    admin_name: defaultAdminName || localStorage.getItem("admin_current_name") || "",
     entry_type: defaultType,
   });
   const [error, setError] = useState("");
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!form.amount || !form.description || !form.admin_name)
+      if (!form.amount || !form.description)
         throw new Error("กรุณากรอกข้อมูลให้ครบ");
       const amount =
         form.entry_type === "withdrawal"
@@ -1846,7 +1845,7 @@ function AddEntryModal({
       const res = await fetch("/api/admin/finance/entries", {
         method: "POST",
         headers: authHeaders(token),
-        body: JSON.stringify({ ...form, amount }),
+        body: JSON.stringify({ ...form, amount, admin_name: "ระบบ" }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -1906,16 +1905,6 @@ function AddEntryModal({
               className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
             />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">แอดมิน</label>
-            <input
-              type="text"
-              placeholder="เช่น เชน หรือ ปักเป้า"
-              value={form.admin_name}
-              onChange={(e) => setForm((f) => ({ ...f, admin_name: e.target.value }))}
-              className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-            />
-          </div>
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose} className="flex-1">ยกเลิก</Button>
@@ -1940,7 +1929,6 @@ function FinanceTab({ token }: { token: string }) {
   const [deleteEntryId, setDeleteEntryId] = useState<number | null>(null);
   const [goalInput, setGoalInput] = useState("");
   const [goalSaved, setGoalSaved] = useState(false);
-  const [currentAdmin, setCurrentAdmin] = useState<string>(() => localStorage.getItem("admin_current_name") || "");
 
   const { data: summary, isLoading: summaryLoading, refetch: refetchSummary } = useQuery<FinanceSummary>({
     queryKey: ["finance-summary"],
@@ -1959,25 +1947,6 @@ function FinanceTab({ token }: { token: string }) {
     queryFn: () => fetch("/api/admin/logs", { headers: authHeaders(token) }).then((r) => r.json()),
     refetchInterval: 60000,
   });
-
-  const { data: settings } = useQuery<{ finance_admin_names: string }>({
-    queryKey: ["store-settings"],
-    queryFn: () => fetch("/api/store-settings").then((r) => r.json()),
-  });
-  const adminNames = (settings?.finance_admin_names || "").split(",").map((s) => s.trim()).filter(Boolean);
-
-  const handleSetAdmin = (name: string) => {
-    setCurrentAdmin(name);
-    localStorage.setItem("admin_current_name", name);
-    localStorage.setItem("admin_finance_names", settings?.finance_admin_names || "");
-  };
-
-  // Sync cached admin names to localStorage for OrdersTab
-  useEffect(() => {
-    if (settings?.finance_admin_names) {
-      localStorage.setItem("admin_finance_names", settings.finance_admin_names);
-    }
-  }, [settings?.finance_admin_names]);
 
   const deleteEntryMutation = useMutation({
     mutationFn: (id: number) =>
@@ -2064,43 +2033,14 @@ function FinanceTab({ token }: { token: string }) {
           token={token}
           onClose={() => setShowAdd(false)}
           defaultType={addType}
-          defaultAdminName={currentAdmin}
         />
       )}
 
-      {/* Current Admin Picker */}
-      {adminNames.length > 0 && (
-        <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5">
-          <UserCheck size={13} className="text-muted-foreground shrink-0" />
-          <span className="text-xs text-muted-foreground">ดำเนินการในฐานะ:</span>
-          <div className="flex gap-1 flex-wrap flex-1">
-            {adminNames.map((name) => (
-              <button
-                key={name}
-                onClick={() => handleSetAdmin(name)}
-                className={`text-xs px-2.5 py-0.5 rounded-full border transition-all font-medium ${
-                  currentAdmin === name
-                    ? "bg-primary border-primary text-primary-foreground"
-                    : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
-                }`}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-          <button onClick={handleRefresh} className="ml-auto text-muted-foreground hover:text-foreground transition-colors shrink-0" title="รีเฟรช">
-            <RefreshCw size={13} />
-          </button>
-        </div>
-      )}
-
-      {adminNames.length === 0 && (
-        <div className="flex justify-end">
-          <button onClick={handleRefresh} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-muted/50">
-            <RefreshCw size={12} /> รีเฟรช
-          </button>
-        </div>
-      )}
+      <div className="flex justify-end">
+        <button onClick={handleRefresh} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-muted/50">
+          <RefreshCw size={12} /> รีเฟรช
+        </button>
+      </div>
 
       {/* Balance Card — credit card style */}
       <div
@@ -2147,35 +2087,6 @@ function FinanceTab({ token }: { token: string }) {
         )}
       </div>
 
-      {/* Admin Split */}
-      {Object.keys(adminBalances).length > 0 && (
-        <div className="bg-card border border-border rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-sm font-semibold text-foreground">สัดส่วนแอดมิน</span>
-          </div>
-          <div className="flex flex-col gap-2.5">
-            {Object.entries(adminBalances).map(([name, bal]) => {
-              const animBal = bal;
-              return (
-                <div key={name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${currentAdmin === name ? "bg-primary text-primary-foreground ring-2 ring-primary/40" : "bg-primary/20 text-primary"}`}>
-                      {name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm text-foreground font-medium">{name}</p>
-                      {currentAdmin === name && <p className="text-[10px] text-primary/70">คุณกำลังใช้งาน</p>}
-                    </div>
-                  </div>
-                  <span className={`font-bold text-sm tabular-nums ${animBal >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {animBal >= 0 ? "+" : ""}{fmtMoney(animBal)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Daily Chart */}
       {dailyChart.length > 0 && (

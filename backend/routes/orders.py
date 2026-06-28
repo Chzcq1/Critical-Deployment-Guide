@@ -52,18 +52,13 @@ async def _run_auto_approve(order: Order, product: Product | None, db: Session, 
     # Finance entries
     if product:
         price = Decimal(str(product.price))
-        admin_names_str = _get_setting(db, "finance_admin_names")
-        admin_names = [n.strip() for n in admin_names_str.split(",") if n.strip()] if admin_names_str else ["แอดมิน"]
-        per_admin = price / len(admin_names)
-        for name in admin_names:
-            entry = FinanceEntry(
-                amount=per_admin,
-                description=f"ออเดอร์ #{order.id} — {product.name} [ยืนยันสลีปอัตโนมัติ]",
-                admin_name=name,
-                entry_type="order",
-                order_id=order.id,
-            )
-            db.add(entry)
+        db.add(FinanceEntry(
+            amount=price,
+            description=f"ออเดอร์ #{order.id} — {product.name} [ยืนยันสลีปอัตโนมัติ]",
+            admin_name="ระบบ",
+            entry_type="order",
+            order_id=order.id,
+        ))
         db.commit()
 
         # Notify admin group
@@ -77,7 +72,7 @@ async def _run_auto_approve(order: Order, product: Product | None, db: Session, 
                     f"ยอด: {amount} บาท (API ยืนยันแล้ว)"
                 ),
                 amount=float(price),
-                admin_name=" / ".join(admin_names),
+                admin_name="ระบบ",
             )
         except Exception as e:
             logger.warning(f"finance notify error: {e}")

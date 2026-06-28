@@ -79,19 +79,15 @@ async def telegram_webhook(request: Request):
                     prod.sales_count = (prod.sales_count or 0) + 1
                     db.commit()
 
-                    # สร้าง FinanceEntry สำหรับแอดมินที่ตั้งค่าไว้
+                    # สร้าง FinanceEntry — บันทึกยอดเต็มเข้าระบบ
                     price = Decimal(str(prod.price))
-                    admin_names_str = _get_setting(db, "finance_admin_names")
-                    admin_names = [n.strip() for n in admin_names_str.split(",") if n.strip()] if admin_names_str else ["แอดมิน"]
-                    per_admin = price / len(admin_names)
-                    for aname in admin_names:
-                        db.add(FinanceEntry(
-                            amount=per_admin,
-                            description=f"ออเดอร์ #{order.id} — {prod.name}",
-                            admin_name=aname,
-                            entry_type="order",
-                            order_id=order.id,
-                        ))
+                    db.add(FinanceEntry(
+                        amount=price,
+                        description=f"ออเดอร์ #{order.id} — {prod.name}",
+                        admin_name="ระบบ",
+                        entry_type="order",
+                        order_id=order.id,
+                    ))
                     db.commit()
 
                 suffix = f"\n\n✅ อนุมัติโดย {admin_name}"
