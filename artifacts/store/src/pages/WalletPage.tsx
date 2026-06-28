@@ -161,8 +161,10 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
   const [sessionToken, setSessionToken] = useState("");
   const [botUrl, setBotUrl] = useState("");
   const [verifiedToken, setVerifiedToken] = useState("");
-  const [otpBotUrl, setOtpBotUrl] = useState<string | null>(null);
-  const [otpBotUsername, setOtpBotUsername] = useState<string | null>(null);
+  const FALLBACK_BOT_URL = "https://t.me/Makur4OTPbot";
+  const FALLBACK_BOT_USERNAME = "Makur4OTPbot";
+  const [otpBotUrl, setOtpBotUrl] = useState<string | null>(FALLBACK_BOT_URL);
+  const [otpBotUsername, setOtpBotUsername] = useState<string | null>(FALLBACK_BOT_USERNAME);
   const [botInfoLoaded, setBotInfoLoaded] = useState(false);
   const [otpInput, setOtpInput] = useState("");
   const [isForgotPin, setIsForgotPin] = useState(false);
