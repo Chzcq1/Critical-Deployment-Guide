@@ -1580,9 +1580,9 @@ function SettingsTab({ token }: { token: string }) {
               </div>
               <button
                 onClick={() => setForm((f) => ({ ...f, [key]: f[key] === "on" ? "off" : "on" }))}
-                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${form[key] === "on" ? "bg-green-500" : "bg-muted border border-border"}`}
+                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${form[key] === "on" ? "bg-green-500" : "bg-muted-foreground/30"}`}
               >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form[key] === "on" ? "translate-x-7" : "translate-x-1"}`} />
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${form[key] === "on" ? "translate-x-5" : "translate-x-0"}`} />
               </button>
             </div>
           ))}
