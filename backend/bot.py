@@ -224,6 +224,35 @@ async def send_finance_notification(action: str, description: str, amount: float
         return False
 
 
+async def send_topup_request(
+    topup_id: int,
+    customer_username: str,
+    amount_hint: float | None,
+    topup_type: str,
+) -> None:
+    if not settings.bot_token or not settings.admin_group_id:
+        logger.warning("Bot not configured — skipping topup notification")
+        return
+    from telegram.error import TelegramError
+    bot = get_bot()
+    type_label = "สลีปโอนเงิน" if topup_type == "slip" else "ซองอั่งเปา TrueMoney"
+    amount_str = f"฿{amount_hint:,.0f}" if amount_hint else "ไม่ระบุ"
+    try:
+        await bot.send_message(
+            chat_id=settings.admin_group_id,
+            text=(
+                f"💳 <b>คำขอเติมเครดิตใหม่ #{topup_id}</b>\n\n"
+                f"👤 @{customer_username}\n"
+                f"ประเภท: {type_label}\n"
+                f"จำนวน: {amount_str}\n\n"
+                f"กรุณาตรวจสอบและอนุมัติในแผงแอดมิน"
+            ),
+            parse_mode="HTML",
+        )
+    except TelegramError as e:
+        logger.error(f"Failed to send topup notification: {e}")
+
+
 async def setup_webhook(webhook_url: str) -> bool:
     if not settings.bot_token:
         logger.warning("BOT_TOKEN not set — skipping webhook setup")

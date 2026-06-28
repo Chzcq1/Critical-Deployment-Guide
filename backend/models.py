@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Numeric, DateTime, Boolean, BigInteger
+from sqlalchemy import Column, Integer, String, Text, Numeric, DateTime, Boolean, BigInteger, ForeignKey
 from sqlalchemy.sql import func
 from backend.database import Base
 
@@ -99,4 +99,43 @@ class AdminLog(Base):
     admin_name = Column(String(100), nullable=False)
     action = Column(String(100), nullable=False)
     details = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_username = Column(String(255), unique=True, nullable=False, index=True)
+    balance = Column(Numeric(12, 2), nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class TopupRequest(Base):
+    __tablename__ = "topup_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    topup_type = Column(String(20), nullable=False, default="slip")
+    amount = Column(Numeric(12, 2), nullable=True)
+    payment_proof = Column(Text, nullable=True)
+    voucher_code = Column(String(100), nullable=True, unique=True)
+    status = Column(String(20), nullable=False, default="pending")
+    slip_verify_status = Column(String(30), nullable=True)
+    slip_verify_result = Column(Text, nullable=True)
+    truemoney_result = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class CreditTransaction(Base):
+    __tablename__ = "credit_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    txn_type = Column(String(20), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    description = Column(String(300), nullable=True)
+    ref_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

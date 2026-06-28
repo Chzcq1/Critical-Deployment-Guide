@@ -56,6 +56,12 @@ def _run_migrations(engine):
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS slip_verify_result TEXT",
         # sort_order for announcements
         "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0",
+        # wallet / credit system
+        "CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, telegram_username VARCHAR(255) UNIQUE NOT NULL, balance NUMERIC(12,2) NOT NULL DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ)",
+        "CREATE TABLE IF NOT EXISTS topup_requests (id SERIAL PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id), topup_type VARCHAR(20) NOT NULL DEFAULT 'slip', amount NUMERIC(12,2), payment_proof TEXT, voucher_code VARCHAR(100) UNIQUE, status VARCHAR(20) NOT NULL DEFAULT 'pending', slip_verify_status VARCHAR(30), slip_verify_result TEXT, truemoney_result TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ)",
+        "CREATE TABLE IF NOT EXISTS credit_transactions (id SERIAL PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id), txn_type VARCHAR(20) NOT NULL, amount NUMERIC(12,2) NOT NULL, description VARCHAR(300), ref_id INTEGER, created_at TIMESTAMPTZ DEFAULT NOW())",
+        # truemoney auto redeem setting
+        "INSERT INTO store_settings (key, value) VALUES ('truemoney_auto_redeem', 'on') ON CONFLICT (key) DO NOTHING",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:
@@ -114,6 +120,7 @@ from backend.routes.admin import router as admin_router
 from backend.routes.auth import router as auth_router
 from backend.routes.announcements import router as announcements_router
 from backend.routes.finance import router as finance_router
+from backend.routes.wallet import router as wallet_router
 from backend.webhook import router as webhook_router
 
 app.include_router(products_router, prefix="/api")
@@ -122,6 +129,7 @@ app.include_router(admin_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(announcements_router, prefix="/api")
 app.include_router(finance_router, prefix="/api")
+app.include_router(wallet_router, prefix="/api")
 app.include_router(webhook_router)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "artifacts", "store", "dist", "public")

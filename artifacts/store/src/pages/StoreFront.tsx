@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ShoppingBag, Upload, Link, Clock, ChevronRight, ChevronLeft, Zap, Megaphone, Search, CheckCircle, XCircle, Loader, Building2, CreditCard } from "lucide-react";
+import { ShoppingBag, Upload, Link, Clock, ChevronRight, ChevronLeft, Zap, Megaphone, Search, CheckCircle, XCircle, Loader, Building2, CreditCard, Wallet, HelpCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -258,253 +258,199 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: (p: Product)
 
 function BuyModal({
   product,
-  botUsername,
-  bankName,
-  bankAccount,
-  bankQrUrl,
   onClose,
-  onSuccess,
 }: {
   product: Product | null;
-  botUsername: string;
-  bankName: string;
-  bankAccount: string;
-  bankQrUrl: string;
   onClose: () => void;
-  onSuccess: (orderId: number, customerName: string, phone: string) => void;
 }) {
-  const [step, setStep] = useState<"info" | "payment">("info");
-  const [customerName, setCustomerName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [paymentType, setPaymentType] = useState<"slip" | "truemoney">("slip");
-  const [slipFile, setSlipFile] = useState<File | null>(null);
-  const [slipPreview, setSlipPreview] = useState<string | null>(null);
-  const [trueMoneyLink, setTrueMoneyLink] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [orderId, setOrderId] = useState<number | null>(null);
+  const [, setLocation] = useLocation();
+  const [username, setUsername] = useState(() => localStorage.getItem("wallet_username") || "");
+  const [inputUsername, setInputUsername] = useState(username);
+  const [showHelp, setShowHelp] = useState(false);
+  const [result, setResult] = useState<{ order_id: number; invite_links: string[]; balance: number } | null>(null);
   const [error, setError] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      if (!product) return;
-      let paymentProof = trueMoneyLink;
-      if (paymentType === "slip" && slipFile) {
-        paymentProof = await compressSlipImage(slipFile);
-      }
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          telegram_user_id: null,
-          telegram_username: null,
-          telegram_first_name: customerName,
-          phone_number: phoneNumber.trim() || null,
-          product_id: product.id,
-          payment_proof: paymentProof,
-          payment_type: paymentType,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to submit order");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setOrderId(data.id);
-      setSubmitted(true);
-    },
-    onError: () => setError("ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"),
+  const walletQuery = useQuery<{ balance: number }>({
+    queryKey: ["wallet-balance", username],
+    queryFn: () => fetch(`/api/wallet/${encodeURIComponent(username)}`).then(r => r.json()),
+    enabled: !!username && !!product,
   });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSlipFile(file);
-    setSlipPreview(URL.createObjectURL(file));
-  };
-
-  const handleNextStep = () => {
-    setError("");
-    if (!customerName.trim()) { setError("กรุณากรอกชื่อของคุณ"); return; }
-    setStep("payment");
-  };
-
-  const handleSubmit = () => {
-    setError("");
-    if (paymentType === "slip" && !slipFile) { setError("กรุณาแนบสลีปการโอนเงิน"); return; }
-    if (paymentType === "truemoney" && !trueMoneyLink.trim()) { setError("กรุณาวางลิงก์ซองทรูมันนี่"); return; }
-    mutation.mutate();
-  };
+  const purchaseMutation = useMutation({
+    mutationFn: async () => {
+      if (!product) throw new Error("ไม่พบสินค้า");
+      const res = await fetch("/api/wallet/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, product_id: product.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
+      return data;
+    },
+    onSuccess: (data) => setResult(data),
+    onError: (e: Error) => setError(e.message),
+  });
 
   const handleClose = () => {
-    setStep("info"); setCustomerName(""); setPhoneNumber("");
-    setSlipFile(null); setSlipPreview(null); setTrueMoneyLink("");
-    setSubmitted(false); setOrderId(null); setError("");
+    setResult(null); setError(""); setInputUsername(username);
     onClose();
   };
 
-  const handleCheckStatus = () => {
-    if (orderId !== null) {
-      handleClose();
-      onSuccess(orderId, customerName, phoneNumber);
-    }
+  const handleSetUsername = () => {
+    const u = inputUsername.replace(/^@/, "").trim();
+    if (!u) return;
+    localStorage.setItem("wallet_username", u);
+    setUsername(u);
+    setError("");
   };
+
+  const price = product ? parseFloat(product.price) : 0;
+  const balance = walletQuery.data?.balance ?? 0;
+  const hasEnough = balance >= price;
 
   return (
     <Dialog open={!!product} onOpenChange={handleClose}>
       <DialogContent className="bg-card border-border max-w-md">
-        {submitted ? (
+        {result ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="flex flex-col items-center gap-4 py-4 text-center"
           >
-            <div className="w-14 h-14 rounded-full bg-green-500/20 flex items-center justify-center">
-              <span className="text-3xl">✅</span>
-            </div>
+            <CheckCircle size={52} className="text-green-400" />
             <div>
-              <h3 className="font-bold text-lg text-foreground">ส่งหลักฐานสำเร็จ!</h3>
+              <h3 className="font-bold text-lg text-foreground">ซื้อสำเร็จ!</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                แอดมินกำลังตรวจสอบ รอสักครู่นะครับ
+                เครดิตคงเหลือ <span className="text-foreground font-semibold">{result.balance.toLocaleString("th-TH")} เครดิต</span>
               </p>
             </div>
-
-            <div className="w-full bg-muted/50 border border-border rounded-xl p-4 text-left">
-              <p className="text-xs text-muted-foreground mb-1">หมายเลขออเดอร์ของคุณ</p>
-              <p className="text-2xl font-bold font-mono text-primary">#{orderId}</p>
-              <p className="text-xs text-muted-foreground mt-2">
-                📌 บันทึกเลขนี้ไว้ — กด "ตรวจสอบสถานะ" เพื่อดูว่าอนุมัติหรือยัง และรับลิงก์เข้ากลุ่มได้เลย
-              </p>
-            </div>
-
-            <div className="flex gap-2 w-full">
-              <Button variant="outline" onClick={handleClose} className="flex-1 text-sm">ปิด</Button>
-              <Button onClick={handleCheckStatus} className="flex-1 bg-primary text-primary-foreground gap-1 text-sm font-bold">
-                <Search size={13} /> ตรวจสอบสถานะ
-              </Button>
-            </div>
+            {result.invite_links.length > 0 && (
+              <div className="w-full bg-muted/50 border border-border rounded-xl p-4 text-left space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">ลิงก์เข้ากลุ่ม (ใช้ได้ครั้งเดียว)</p>
+                {result.invite_links.map((link, i) => (
+                  <a
+                    key={i}
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center bg-primary text-primary-foreground rounded-lg py-2 text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    เข้ากลุ่ม {result.invite_links.length > 1 ? `(${i + 1})` : ""}
+                  </a>
+                ))}
+              </div>
+            )}
+            {result.invite_links.length === 0 && (
+              <div className="w-full bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm text-yellow-300">
+                แอดมินจะส่งลิงก์ให้เร็วๆ นี้ ออเดอร์ #{result.order_id}
+              </div>
+            )}
+            <Button onClick={handleClose} className="w-full">ปิด</Button>
           </motion.div>
-        ) : step === "info" ? (
+        ) : (
           <>
             <DialogHeader>
               <DialogTitle className="text-foreground">{product?.name}</DialogTitle>
               <p className="text-primary font-bold text-xl">
-                ฿{product ? parseFloat(product.price).toLocaleString() : ""}
+                {price.toLocaleString("th-TH")} เครดิต
               </p>
             </DialogHeader>
-            <div className="flex flex-col gap-3 mt-2">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ชื่อ-นามสกุล *</label>
-                <input
-                  type="text"
-                  placeholder="กรอกชื่อของคุณ"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleNextStep()}
-                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                />
+
+            {!username ? (
+              <div className="space-y-3 pt-1">
+                <p className="text-sm text-muted-foreground">ใส่ Telegram Username เพื่อเชื่อมกระเป๋าเครดิตของคุณ</p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
+                  <input
+                    className="w-full bg-muted border border-border rounded-lg pl-7 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="username ของคุณ"
+                    value={inputUsername.replace(/^@/, "")}
+                    onChange={e => setInputUsername(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleSetUsername()}
+                  />
+                </div>
+                <Button className="w-full" onClick={handleSetUsername} disabled={!inputUsername.trim()}>
+                  ยืนยัน Username
+                </Button>
+                <button
+                  onClick={() => setShowHelp(v => !v)}
+                  className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5"
+                >
+                  <HelpCircle size={12} /> ไม่รู้จะหา Username ได้จากไหน?
+                </button>
+                {showHelp && (
+                  <div className="bg-muted rounded-lg p-3 text-xs text-muted-foreground space-y-1.5">
+                    <p>1. เปิด Telegram → Settings</p>
+                    <p>2. ดูช่อง <span className="text-foreground font-medium">Username</span> (มี @ นำหน้า)</p>
+                    <p>3. ถ้าไม่มี ให้กด Edit Profile แล้วตั้งก่อน</p>
+                  </div>
+                )}
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  เบอร์โทรศัพท์ <span className="text-muted-foreground/50 normal-case">(สำหรับค้นหาออเดอร์หากลืมชื่อ)</span>
-                </label>
-                <input
-                  type="tel"
-                  placeholder="0812345678"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleNextStep()}
-                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                />
-              </div>
-              {error && <p className="text-red-400 text-sm">{error}</p>}
-              <Button onClick={handleNextStep} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
-                ถัดไป — แนบหลักฐาน <ChevronRight size={14} />
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle className="text-foreground">แนบหลักฐานการชำระเงิน</DialogTitle>
-              <p className="text-sm text-muted-foreground">
-                {product?.name} — ฿{product ? parseFloat(product.price).toLocaleString() : ""}
-              </p>
-            </DialogHeader>
-            {(bankName || bankAccount || bankQrUrl) && (
-              <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex flex-col gap-3">
-                <p className="text-xs font-semibold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                  <Building2 size={12} /> ข้อมูลการโอนเงิน
-                </p>
-                <div className="flex gap-4 items-start">
-                  <div className="flex-1 flex flex-col gap-1.5">
-                    {bankName && (
-                      <div className="flex items-center gap-2">
-                        <Building2 size={13} className="text-muted-foreground shrink-0" />
-                        <span className="text-sm text-foreground font-medium">{bankName}</span>
-                      </div>
-                    )}
-                    {bankAccount && (
-                      <div className="flex items-center gap-2">
-                        <CreditCard size={13} className="text-muted-foreground shrink-0" />
-                        <span className="text-sm font-mono text-foreground tracking-wider">{bankAccount}</span>
-                      </div>
+            ) : (
+              <div className="space-y-4 pt-1">
+                <div className="bg-muted rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">บัญชี @{username}</p>
+                    {walletQuery.isLoading ? (
+                      <div className="h-5 w-24 bg-muted-foreground/20 animate-pulse rounded" />
+                    ) : (
+                      <p className={`text-lg font-bold ${hasEnough ? "text-foreground" : "text-red-400"}`}>
+                        {balance.toLocaleString("th-TH")} เครดิต
+                      </p>
                     )}
                   </div>
-                  {bankQrUrl && (
-                    <div className="shrink-0">
-                      <img src={bankQrUrl} alt="QR Code" className="w-20 h-20 rounded-lg border border-border object-contain bg-white" />
-                    </div>
-                  )}
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground mb-0.5">ราคาสินค้า</p>
+                    <p className="text-lg font-bold text-primary">{price.toLocaleString("th-TH")}</p>
+                  </div>
                 </div>
+
+                {!hasEnough && !walletQuery.isLoading && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400 flex items-center justify-between">
+                    <span>เครดิตไม่พอ (ขาด {(price - balance).toLocaleString("th-TH")} เครดิต)</span>
+                    <button
+                      onClick={() => { handleClose(); setLocation("/wallet"); }}
+                      className="text-xs underline whitespace-nowrap ml-2"
+                    >
+                      เติมเงิน
+                    </button>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-400">
+                    {error}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setUsername(""); setInputUsername(""); localStorage.removeItem("wallet_username"); }}
+                    className="text-xs"
+                  >
+                    เปลี่ยน
+                  </Button>
+                  <Button
+                    className="flex-1 font-bold"
+                    disabled={!hasEnough || purchaseMutation.isPending || walletQuery.isLoading}
+                    onClick={() => { setError(""); purchaseMutation.mutate(); }}
+                  >
+                    {purchaseMutation.isPending ? <Loader size={14} className="animate-spin" /> : <ShoppingBag size={14} />}
+                    {purchaseMutation.isPending ? "กำลังดำเนินการ..." : `ซื้อ ${price.toLocaleString()} เครดิต`}
+                  </Button>
+                </div>
+
+                <button
+                  onClick={() => { handleClose(); setLocation("/wallet"); }}
+                  className="w-full text-xs text-muted-foreground hover:text-primary flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Wallet size={12} /> ดูกระเป๋าเครดิต / เติมเงิน
+                </button>
               </div>
             )}
-            <Tabs value={paymentType} onValueChange={(v) => setPaymentType(v as "slip" | "truemoney")}>
-              <TabsList className="w-full bg-muted">
-                <TabsTrigger value="slip" className="flex-1 gap-2"><Upload size={14} /> สลีปโอนเงิน</TabsTrigger>
-                <TabsTrigger value="truemoney" className="flex-1 gap-2"><Link size={14} /> TrueMoney</TabsTrigger>
-              </TabsList>
-              <TabsContent value="slip" className="mt-4">
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                >
-                  {slipPreview ? (
-                    <img src={slipPreview} alt="slip" className="max-h-48 mx-auto rounded object-contain" />
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <Upload size={24} />
-                      <span className="text-sm">แตะเพื่ออัปโหลดสลีป</span>
-                      <span className="text-xs text-muted-foreground/60">รองรับ JPG, PNG</span>
-                    </div>
-                  )}
-                </div>
-                <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} className="hidden" />
-                {slipPreview && (
-                  <button onClick={() => { setSlipFile(null); setSlipPreview(null); }} className="mt-2 text-xs text-muted-foreground hover:text-red-400 transition-colors">
-                    ✕ เปลี่ยนรูป
-                  </button>
-                )}
-              </TabsContent>
-              <TabsContent value="truemoney" className="mt-4">
-                <div className="flex flex-col gap-2">
-                  <input
-                    type="text"
-                    placeholder="https://gift.truemoney.com/..."
-                    value={trueMoneyLink}
-                    onChange={(e) => setTrueMoneyLink(e.target.value)}
-                    className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                  />
-                  <p className="text-xs text-muted-foreground">วางลิงก์ซองทรูมันนี่ที่นี่</p>
-                </div>
-              </TabsContent>
-            </Tabs>
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => { setStep("info"); setError(""); }} className="flex-1">ย้อนกลับ</Button>
-              <Button onClick={handleSubmit} disabled={mutation.isPending} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
-                {mutation.isPending ? "กำลังส่ง..." : "ส่งหลักฐาน"}
-              </Button>
-            </div>
           </>
         )}
       </DialogContent>
@@ -783,6 +729,14 @@ export default function StoreFront() {
             <Button
               size="sm"
               variant="ghost"
+              onClick={() => setLocation("/wallet")}
+              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+            >
+              <Wallet size={13} /> กระเป๋า
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
               onClick={() => { markAllSeen(); setLocation("/announcements"); }}
               className="relative text-muted-foreground hover:text-foreground gap-1.5 text-xs"
             >
@@ -795,9 +749,9 @@ export default function StoreFront() {
               size="sm"
               variant="ghost"
               onClick={() => { setCheckOrderId(null); setCheckName(""); setShowOrderStatus(true); }}
-              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs hidden sm:flex"
             >
-              <Search size={13} /> ตรวจสอบออเดอร์
+              <Search size={13} /> ออเดอร์
             </Button>
           </div>
         </div>
@@ -870,12 +824,7 @@ export default function StoreFront() {
 
       <BuyModal
         product={selectedProduct}
-        botUsername={botUsername}
-        bankName={bankName}
-        bankAccount={bankAccount}
-        bankQrUrl={bankQrUrl}
         onClose={() => setSelectedProduct(null)}
-        onSuccess={handleBuySuccess}
       />
       <OrderStatusModal
         open={showOrderStatus}

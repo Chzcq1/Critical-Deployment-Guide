@@ -24,7 +24,7 @@ router = APIRouter()
 
 SETTING_DEFAULTS = {
     "hero_title": "สินค้าดิจิทัลพรีเมียม",
-    "hero_subtitle": "รับสิทธิ์ทันทีผ่าน Telegram — ชำระเงิน รอยืนยัน รับลิงก์",
+    "hero_subtitle": "เติมเครดิต แล้วซื้อสินค้าได้ทันที — ไม่ต้องโอนทุกครั้ง",
     "announcement": "",
     "store_name": "DigitalStore",
     "bot_username": "",
@@ -35,6 +35,7 @@ SETTING_DEFAULTS = {
     "finance_monthly_goal": "0",
     "slip_verify_mode": "off",
     "receiver_bank_code": "",
+    "truemoney_auto_redeem": "on",
 }
 
 

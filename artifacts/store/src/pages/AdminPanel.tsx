@@ -1,13 +1,238 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star, Wallet, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, Activity, UserCheck } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star, Wallet, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, Activity, UserCheck, Users, Gift, Upload, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import AnnouncementsTab from "@/components/AnnouncementsTab";
+
+// ── Customers Tab ─────────────────────────────────────────────────────────────
+function CustomersTab({ token }: { token: string }) {
+  const qc = useQueryClient();
+  const [adjustId, setAdjustId] = useState<number | null>(null);
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [adjustError, setAdjustError] = useState("");
+
+  const { data: customers = [], isLoading } = useQuery<any[]>({
+    queryKey: ["admin-customers"],
+    queryFn: () => fetch("/api/admin/customers", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+  });
+
+  const adjustMutation = useMutation({
+    mutationFn: (id: number) =>
+      fetch(`/api/admin/customers/${id}/adjust`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ amount: parseFloat(adjustAmount), reason: adjustReason || "แอดมินปรับยอด" }),
+      }).then(r => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-customers"] });
+      setAdjustId(null); setAdjustAmount(""); setAdjustReason(""); setAdjustError("");
+    },
+    onError: () => setAdjustError("เกิดข้อผิดพลาด"),
+  });
+
+  return (
+    <div>
+      <h2 className="text-base font-semibold text-foreground mb-4">บัญชีลูกค้า ({customers.length})</h2>
+      {isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 bg-muted animate-pulse rounded-xl" />)}</div>
+      ) : customers.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground"><Users size={28} className="mx-auto mb-2 opacity-40" /><p>ยังไม่มีลูกค้า</p></div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-muted-foreground text-xs">
+                <th className="text-left py-2 px-3">Username</th>
+                <th className="text-right py-2 px-3">เครดิต</th>
+                <th className="text-right py-2 px-3">ธุรกรรม</th>
+                <th className="text-right py-2 px-3">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customers.map(c => (
+                <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30">
+                  <td className="py-2.5 px-3">
+                    <span className="font-medium text-foreground">@{c.telegram_username}</span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono font-semibold text-primary">
+                    {c.balance.toLocaleString("th-TH")}
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-muted-foreground">{c.transaction_count}</td>
+                  <td className="py-2.5 px-3 text-right">
+                    <Button size="sm" variant="outline" className="text-xs h-7 px-2.5"
+                      onClick={() => { setAdjustId(c.id); setAdjustAmount(""); setAdjustReason(""); setAdjustError(""); }}>
+                      ปรับยอด
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={adjustId !== null} onOpenChange={() => setAdjustId(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader><DialogTitle className="text-sm">ปรับยอดเครดิต</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-1">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">จำนวน (+ เพิ่ม / - ลด)</label>
+              <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                type="number" placeholder="เช่น 100 หรือ -50" value={adjustAmount}
+                onChange={e => setAdjustAmount(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">เหตุผล</label>
+              <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="เช่น โปรโมชั่น, คืนเงิน" value={adjustReason}
+                onChange={e => setAdjustReason(e.target.value)} />
+            </div>
+            {adjustError && <p className="text-red-400 text-xs">{adjustError}</p>}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setAdjustId(null)}>ยกเลิก</Button>
+              <Button className="flex-1" disabled={!adjustAmount || adjustMutation.isPending}
+                onClick={() => adjustId !== null && adjustMutation.mutate(adjustId)}>
+                {adjustMutation.isPending ? <Loader size={13} className="animate-spin" /> : "ยืนยัน"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── Topup Requests Tab ────────────────────────────────────────────────────────
+function TopupTab({ token }: { token: string }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState("pending");
+  const [approveId, setApproveId] = useState<number | null>(null);
+  const [approveAmount, setApproveAmount] = useState("");
+  const [approveError, setApproveError] = useState("");
+
+  const { data: topups = [], isLoading } = useQuery<any[]>({
+    queryKey: ["admin-topups", filter],
+    queryFn: () => fetch(`/api/admin/topup-requests?status=${filter}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    refetchInterval: 15000,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (id: number) =>
+      fetch(`/api/admin/topup-requests/${id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ amount: parseFloat(approveAmount) }),
+      }).then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.detail); return d; }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-topups"] });
+      setApproveId(null); setApproveAmount(""); setApproveError("");
+    },
+    onError: (e: Error) => setApproveError(e.message),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (id: number) =>
+      fetch(`/api/admin/topup-requests/${id}/reject`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(r => r.json()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-topups"] }),
+  });
+
+  const pendingCount = topups.filter(t => t.status === "pending").length;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold text-foreground">
+          คำขอเติมเครดิต
+          {filter === "pending" && pendingCount > 0 && (
+            <span className="ml-2 bg-red-500/20 text-red-400 text-xs px-2 py-0.5 rounded-full">{pendingCount}</span>
+          )}
+        </h2>
+        <div className="flex gap-1">
+          {["pending","approved","rejected","all"].map(s => (
+            <button key={s} onClick={() => setFilter(s)}
+              className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${filter === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+              {s === "pending" ? "รอดำเนินการ" : s === "approved" ? "อนุมัติแล้ว" : s === "rejected" ? "ปฏิเสธแล้ว" : "ทั้งหมด"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 bg-muted animate-pulse rounded-xl" />)}</div>
+      ) : topups.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground"><CreditCard size={28} className="mx-auto mb-2 opacity-40" /><p>ไม่มีรายการ</p></div>
+      ) : (
+        <div className="space-y-2">
+          {topups.map(t => (
+            <div key={t.id} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${t.topup_type === "truemoney" ? "bg-red-500/15" : "bg-blue-500/15"}`}>
+                {t.topup_type === "truemoney" ? <Gift size={15} className="text-red-400" /> : <Upload size={15} className="text-blue-400" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">@{t.customer_username}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-muted-foreground">{t.topup_type === "truemoney" ? "ซองอั่งเปา" : "สลีปโอนเงิน"}</span>
+                  {t.amount && <span className="text-xs font-medium text-foreground">฿{Number(t.amount).toLocaleString("th-TH")}</span>}
+                  <span className="text-[10px] text-muted-foreground">{t.created_at ? new Date(t.created_at).toLocaleDateString("th-TH") : ""}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {t.status === "pending" ? (
+                  <>
+                    <Button size="sm" variant="outline" className="text-xs h-7 px-2.5 text-green-400 border-green-500/30 hover:bg-green-500/10"
+                      onClick={() => { setApproveId(t.id); setApproveAmount(t.amount ? String(t.amount) : ""); setApproveError(""); }}>
+                      อนุมัติ
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-xs h-7 px-2.5 text-red-400 border-red-500/30 hover:bg-red-500/10"
+                      disabled={rejectMutation.isPending} onClick={() => rejectMutation.mutate(t.id)}>
+                      ปฏิเสธ
+                    </Button>
+                  </>
+                ) : (
+                  <span className={`text-xs px-2 py-0.5 rounded-full border ${t.status === "approved" ? "bg-green-500/15 text-green-400 border-green-500/30" : "bg-red-500/15 text-red-400 border-red-500/30"}`}>
+                    {t.status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธ"}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={approveId !== null} onOpenChange={() => setApproveId(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader><DialogTitle className="text-sm">อนุมัติเติมเครดิต</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-1">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">จำนวนเครดิต (1 บาท = 1 เครดิต)</label>
+              <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                type="number" placeholder="เช่น 100" value={approveAmount}
+                onChange={e => setApproveAmount(e.target.value)} />
+            </div>
+            {approveError && <p className="text-red-400 text-xs">{approveError}</p>}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setApproveId(null)}>ยกเลิก</Button>
+              <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                disabled={!approveAmount || approveMutation.isPending}
+                onClick={() => approveId !== null && approveMutation.mutate(approveId)}>
+                {approveMutation.isPending ? <Loader size={13} className="animate-spin" /> : "อนุมัติ"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function useCountUp(target: number, duration = 900) {
   const [val, setVal] = useState(0);
@@ -1983,6 +2208,12 @@ export default function AdminPanel() {
               <TabsTrigger value="products" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
                 <Package size={13} /> สินค้า
               </TabsTrigger>
+              <TabsTrigger value="topup" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
+                <CreditCard size={13} /> เติมเครดิต
+              </TabsTrigger>
+              <TabsTrigger value="customers" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
+                <Users size={13} /> ลูกค้า
+              </TabsTrigger>
               <TabsTrigger value="orders" className="gap-1.5 text-xs px-3 py-2 whitespace-nowrap">
                 <ClipboardList size={13} /> ออเดอร์
               </TabsTrigger>
@@ -1999,6 +2230,12 @@ export default function AdminPanel() {
           </div>
           <TabsContent value="products">
             <ProductsTab token={token} />
+          </TabsContent>
+          <TabsContent value="topup">
+            <TopupTab token={token} />
+          </TabsContent>
+          <TabsContent value="customers">
+            <CustomersTab token={token} />
           </TabsContent>
           <TabsContent value="orders">
             <OrdersTab token={token} />
