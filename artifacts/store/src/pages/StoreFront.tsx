@@ -784,6 +784,20 @@ export default function StoreFront() {
   const bankAccount = settings?.bank_account || "";
   const bankQrUrl = settings?.bank_qr_url || "";
 
+  // Wallet balance in header
+  const [headerToken] = useState(() => sessionStorage.getItem("wallet_token") || "");
+  const { data: headerWallet } = useQuery<{ username: string; balance: number }>({
+    queryKey: ["wallet-header", headerToken],
+    queryFn: async () => {
+      const res = await fetch("/api/wallet/me", { headers: { Authorization: `Bearer ${headerToken}` } });
+      if (!res.ok) throw new Error("no wallet");
+      return res.json();
+    },
+    enabled: !!headerToken,
+    staleTime: 60_000,
+    retry: false,
+  });
+
   const handleBuySuccess = (orderId: number, name: string, phone: string) => {
     setCheckOrderId(orderId);
     setCheckName(name);
@@ -794,39 +808,42 @@ export default function StoreFront() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b border-border">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 shrink-0">
-            <Zap size={18} className="text-primary" />
-            <span className="font-bold text-foreground tracking-tight">{storeName}</span>
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 h-14 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 shrink-0 min-w-0">
+            <Zap size={18} className="text-primary shrink-0" />
+            <span className="font-bold text-foreground tracking-tight truncate max-w-[120px] sm:max-w-none">{storeName}</span>
           </div>
-          <div className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant="ghost"
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Wallet button — always visible, shows balance when logged in */}
+            <button
               onClick={() => setLocation("/wallet")}
-              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                headerWallet
+                  ? "bg-primary/15 border border-primary/30 text-primary hover:bg-primary/25"
+                  : "bg-muted border border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
+              }`}
             >
-              <Wallet size={13} /> กระเป๋า
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
+              <Wallet size={13} />
+              {headerWallet
+                ? <span>{headerWallet.balance.toLocaleString("th-TH")} <span className="hidden xs:inline">เครดิต</span></span>
+                : <span>กระเป๋า</span>
+              }
+            </button>
+            <button
               onClick={() => { markAllSeen(); setLocation("/announcements"); }}
-              className="relative text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+              className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground bg-muted border border-border hover:border-primary/40 transition-colors"
             >
-              <Megaphone size={13} /> ประกาศ
+              <Megaphone size={13} /> <span className="hidden sm:inline">ประกาศ</span>
               {hasUnread && (
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 border border-background" />
               )}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
+            </button>
+            <button
               onClick={() => { setCheckOrderId(null); setCheckName(""); setShowOrderStatus(true); }}
-              className="text-muted-foreground hover:text-foreground gap-1.5 text-xs hidden sm:flex"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground bg-muted border border-border hover:border-primary/40 transition-colors"
             >
               <Search size={13} /> ออเดอร์
-            </Button>
+            </button>
           </div>
         </div>
       </header>

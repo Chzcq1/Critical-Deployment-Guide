@@ -396,6 +396,11 @@ function MyOrdersTab({ token }: { token: string }) {
   );
 }
 
+interface StoreSettings {
+  topup_slip_enabled: string;
+  topup_truemoney_enabled: string;
+}
+
 // ── Main WalletPage ───────────────────────────────────────────────────────────
 export default function WalletPage() {
   const [, setLocation] = useLocation();
@@ -412,6 +417,16 @@ export default function WalletPage() {
   const [topupResult, setTopupResult] = useState<{ ok: boolean; message: string; amount?: number } | null>(null);
   const [topupError, setTopupError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const { data: storeSettings } = useQuery<StoreSettings>({
+    queryKey: ["store-settings-topup"],
+    queryFn: () => fetch("/api/store-settings").then(r => r.json()),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+  });
+
+  const slipEnabled = (storeSettings?.topup_slip_enabled ?? "on") === "on";
+  const trueMoneyEnabled = (storeSettings?.topup_truemoney_enabled ?? "on") === "on";
 
   const walletQuery = useQuery<WalletData>({
     queryKey: ["wallet-me", token],
@@ -474,8 +489,14 @@ export default function WalletPage() {
     setTopupModal(false); setSlipFile(null); setSlipPreview(null);
     setAmountHint(""); setVoucherLink(""); setTopupResult(null); setTopupError("");
   };
+  const handleTopupOpen = () => {
+    if (!slipEnabled && trueMoneyEnabled) setTopupType("truemoney");
+    if (slipEnabled && !trueMoneyEnabled) setTopupType("slip");
+    setTopupModal(true);
+  };
   const handleTopupSubmit = () => { setTopupError(""); if (topupType === "slip") slipMutation.mutate(); else tmMutation.mutate(); };
   const isPending = slipMutation.isPending || tmMutation.isPending;
+  const noTopupAvailable = !slipEnabled && !trueMoneyEnabled;
 
   if (!token) {
     return <LoginScreen onLoggedIn={(tok, uname) => { setToken(tok); setUsername(uname); }} />;
@@ -521,8 +542,8 @@ export default function WalletPage() {
             </p>
           )}
           <div className="mt-4 flex gap-2">
-            <Button size="sm" className="flex-1 gap-1.5" onClick={() => setTopupModal(true)}>
-              <Plus size={14} /> เติมเครดิต
+            <Button size="sm" className="flex-1 gap-1.5" onClick={handleTopupOpen} disabled={noTopupAvailable}>
+              <Plus size={14} /> {noTopupAvailable ? "ปิดรับเติมเงินชั่วคราว" : "เติมเครดิต"}
             </Button>
             <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => setLocation("/")}>
               <ShoppingBag size={14} /> ซื้อสินค้า
@@ -616,16 +637,26 @@ export default function WalletPage() {
             </motion.div>
           ) : (
             <div className="space-y-4 pt-1">
-              <div className="grid grid-cols-2 gap-2">
-                {(["truemoney", "slip"] as const).map(t => (
-                  <button key={t} onClick={() => setTopupType(t)}
-                    className={`flex flex-col items-center gap-2 p-3 rounded-xl border text-sm font-medium transition-colors ${topupType === t ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-primary/50"}`}>
-                    {t === "truemoney" ? <Gift size={20} /> : <Upload size={20} />}
-                    {t === "truemoney" ? "ซองอั่งเปา" : "โอนสลีป"}
-                    <span className="text-[10px] opacity-70">{t === "truemoney" ? "TrueMoney" : "ธนาคาร"}</span>
-                  </button>
-                ))}
-              </div>
+              {/* Only show selector if both methods are enabled */}
+              {slipEnabled && trueMoneyEnabled && (
+                <div className="grid grid-cols-2 gap-2">
+                  {(["truemoney", "slip"] as const).map(t => (
+                    <button key={t} onClick={() => setTopupType(t)}
+                      className={`flex flex-col items-center gap-2 p-3 rounded-xl border text-sm font-medium transition-colors ${topupType === t ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-primary/50"}`}>
+                      {t === "truemoney" ? <Gift size={20} /> : <Upload size={20} />}
+                      {t === "truemoney" ? "ซองอั่งเปา" : "โอนสลีป"}
+                      <span className="text-[10px] opacity-70">{t === "truemoney" ? "TrueMoney" : "ธนาคาร"}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Single method header label */}
+              {!(slipEnabled && trueMoneyEnabled) && (
+                <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-3 py-2.5">
+                  {topupType === "truemoney" ? <Gift size={16} className="text-primary" /> : <Upload size={16} className="text-primary" />}
+                  <span className="text-sm font-medium text-foreground">{topupType === "truemoney" ? "ซองอั่งเปา TrueMoney" : "โอนสลีปธนาคาร"}</span>
+                </div>
+              )}
 
               {topupType === "truemoney" && (
                 <div className="space-y-3">

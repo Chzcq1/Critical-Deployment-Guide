@@ -304,6 +304,8 @@ interface StoreSettings {
   slip_verify_mode: string;
   receiver_bank_code: string;
   truemoney_phone: string;
+  topup_slip_enabled: string;
+  topup_truemoney_enabled: string;
 }
 
 function authHeaders(token: string) {
@@ -1257,6 +1259,8 @@ function SettingsTab({ token }: { token: string }) {
     slip_verify_mode: "off",
     receiver_bank_code: "",
     truemoney_phone: "",
+    topup_slip_enabled: "on",
+    topup_truemoney_enabled: "on",
   });
 
   const [initialized, setInitialized] = useState(false);
@@ -1431,6 +1435,34 @@ function SettingsTab({ token }: { token: string }) {
               ✅ จะตรวจว่าผู้รับในสลีปตรงกับเลขบัญชี <strong>{form.bank_account || "(กรอกเลขบัญชีด้านบน)"}</strong>
             </p>
           )}
+        </div>
+      </div>
+
+      {/* Topup method toggles */}
+      <div className="flex flex-col gap-4 bg-card border border-orange-500/20 rounded-xl p-5">
+        <div className="flex items-center gap-2">
+          <span className="text-base">💳</span>
+          <h3 className="font-semibold text-foreground text-sm">เปิด/ปิดช่องทางเติมเงิน</h3>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">ปิดชั่วคราวได้ทันที ลูกค้าจะเห็นว่าช่องทางนั้นไม่พร้อมให้บริการ</p>
+        <div className="flex flex-col gap-3">
+          {([
+            { key: "topup_slip_enabled" as const, label: "🏦 สลีปโอนเงิน (ธนาคาร)", desc: "ลูกค้าแนบสลีปแล้วรอแอดมินอนุมัติ" },
+            { key: "topup_truemoney_enabled" as const, label: "🧧 ซองอั่งเปา (TrueMoney)", desc: "ลูกค้าวางลิงก์ซอง แลกเครดิตอัตโนมัติ" },
+          ] as const).map(({ key, label, desc }) => (
+            <div key={key} className="flex items-center justify-between gap-3 bg-muted/50 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+              </div>
+              <button
+                onClick={() => setForm((f) => ({ ...f, [key]: f[key] === "on" ? "off" : "on" }))}
+                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${form[key] === "on" ? "bg-green-500" : "bg-muted border border-border"}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${form[key] === "on" ? "translate-x-7" : "translate-x-1"}`} />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 

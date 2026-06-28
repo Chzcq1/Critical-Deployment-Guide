@@ -172,6 +172,9 @@ async def topup_slip(
     customer: Customer = Depends(get_wallet_customer),
     db: Session = Depends(get_db),
 ):
+    if (_get_setting(db, "topup_slip_enabled") or "on") == "off":
+        raise HTTPException(status_code=400, detail="ขณะนี้ปิดรับการเติมเงินผ่านสลีปชั่วคราว กรุณาติดต่อแอดมิน")
+
     payment_proof = body.get("payment_proof", "")
     amount_hint = body.get("amount_hint")
 
@@ -249,6 +252,9 @@ async def topup_truemoney(
     customer: Customer = Depends(get_wallet_customer),
     db: Session = Depends(get_db),
 ):
+    if (_get_setting(db, "topup_truemoney_enabled") or "on") == "off":
+        raise HTTPException(status_code=400, detail="ขณะนี้ปิดรับการเติมเงินผ่านซองอั่งเปาชั่วคราว กรุณาติดต่อแอดมิน")
+
     voucher_raw = body.get("voucher", "")
 
     if not voucher_raw:

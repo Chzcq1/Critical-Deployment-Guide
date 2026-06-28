@@ -306,6 +306,8 @@ def _build_settings_response(db: Session) -> StoreSettingsResponse:
         slip_verify_mode=_get_setting(db, "slip_verify_mode") or "off",
         receiver_bank_code=_get_setting(db, "receiver_bank_code") or "",
         truemoney_phone=_get_setting(db, "truemoney_phone") or "",
+        topup_slip_enabled=_get_setting(db, "topup_slip_enabled") or "on",
+        topup_truemoney_enabled=_get_setting(db, "topup_truemoney_enabled") or "on",
     )
 
 

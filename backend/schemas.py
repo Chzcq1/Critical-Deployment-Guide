@@ -128,6 +128,8 @@ class StoreSettingsUpdate(BaseModel):
     slip_verify_mode: Optional[str] = None
     receiver_bank_code: Optional[str] = None
     truemoney_phone: Optional[str] = None
+    topup_slip_enabled: Optional[str] = None
+    topup_truemoney_enabled: Optional[str] = None
 
 
 class StoreSettingsResponse(BaseModel):
@@ -143,6 +145,8 @@ class StoreSettingsResponse(BaseModel):
     slip_verify_mode: str
     receiver_bank_code: str
     truemoney_phone: str
+    topup_slip_enabled: str = "on"
+    topup_truemoney_enabled: str = "on"
 
 
 class AdminLogCreate(BaseModel):
