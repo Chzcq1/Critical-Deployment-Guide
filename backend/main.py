@@ -62,6 +62,8 @@ def _run_migrations(engine):
         "CREATE TABLE IF NOT EXISTS credit_transactions (id SERIAL PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id), txn_type VARCHAR(20) NOT NULL, amount NUMERIC(12,2) NOT NULL, description VARCHAR(300), ref_id INTEGER, created_at TIMESTAMPTZ DEFAULT NOW())",
         # truemoney auto redeem setting
         "INSERT INTO store_settings (key, value) VALUES ('truemoney_auto_redeem', 'on') ON CONFLICT (key) DO NOTHING",
+        # wallet PIN hash column
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS pin_hash VARCHAR(255)",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

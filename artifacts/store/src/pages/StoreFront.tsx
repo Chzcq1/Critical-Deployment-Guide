@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ShoppingBag, Upload, Link, Clock, ChevronRight, ChevronLeft, Zap, Megaphone, Search, CheckCircle, XCircle, Loader, Building2, CreditCard, Wallet, HelpCircle, X } from "lucide-react";
+import { ShoppingBag, Upload, Link, Clock, ChevronRight, ChevronLeft, Zap, Megaphone, Search, CheckCircle, XCircle, Loader, Building2, CreditCard, Wallet, HelpCircle, X, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -264,25 +264,41 @@ function BuyModal({
   onClose: () => void;
 }) {
   const [, setLocation] = useLocation();
-  const [username, setUsername] = useState(() => localStorage.getItem("wallet_username") || "");
-  const [inputUsername, setInputUsername] = useState(username);
-  const [showHelp, setShowHelp] = useState(false);
+
+  // Read token from sessionStorage (set by WalletPage after PIN login)
+  const [token, setToken] = useState(() => sessionStorage.getItem("wallet_token") || "");
   const [result, setResult] = useState<{ order_id: number; invite_links: string[]; balance: number } | null>(null);
   const [error, setError] = useState("");
 
-  const walletQuery = useQuery<{ balance: number }>({
-    queryKey: ["wallet-balance", username],
-    queryFn: () => fetch(`/api/wallet/${encodeURIComponent(username)}`).then(r => r.json()),
-    enabled: !!username && !!product,
+  // Mini login state (used when not yet logged in)
+  const [miniStep, setMiniStep] = useState<"username" | "pin">("username");
+  const [inputUsername, setInputUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [miniError, setMiniError] = useState("");
+  const [miniLoading, setMiniLoading] = useState(false);
+
+  const walletQuery = useQuery<{ username: string; balance: number }>({
+    queryKey: ["wallet-me-modal", token],
+    queryFn: async () => {
+      const res = await fetch("/api/wallet/me", { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("unauthorized");
+      return res.json();
+    },
+    enabled: !!token && !!product,
+    retry: false,
   });
+
+  // If token is invalid, clear it so mini-login shows
+  const isTokenValid = !!token && !walletQuery.isError;
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
       if (!product) throw new Error("ไม่พบสินค้า");
       const res = await fetch("/api/wallet/purchase", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, product_id: product.id }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ product_id: product.id }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
@@ -293,31 +309,65 @@ function BuyModal({
   });
 
   const handleClose = () => {
-    setResult(null); setError(""); setInputUsername(username);
+    setResult(null); setError(""); setMiniError(""); setPin("");
     onClose();
   };
 
-  const handleSetUsername = () => {
-    const u = inputUsername.replace(/^@/, "").trim();
+  // Mini login: check username then authenticate
+  const handleMiniCheckUser = async () => {
+    const u = inputUsername.replace(/^@/, "").trim().toLowerCase();
     if (!u) return;
-    localStorage.setItem("wallet_username", u);
-    setUsername(u);
-    setError("");
+    setMiniLoading(true); setMiniError("");
+    try {
+      const res = await fetch(`/api/wallet/check/${encodeURIComponent(u)}`);
+      const data = await res.json();
+      if (!data.has_pin) {
+        // No PIN yet → redirect to wallet page to set up
+        handleClose();
+        setLocation("/wallet");
+        return;
+      }
+      setMiniStep("pin");
+    } catch {
+      setMiniError("เกิดข้อผิดพลาด กรุณาลองใหม่");
+    } finally {
+      setMiniLoading(false);
+    }
+  };
+
+  const handleMiniAuth = async () => {
+    const u = inputUsername.replace(/^@/, "").trim().toLowerCase();
+    setMiniLoading(true); setMiniError("");
+    try {
+      const res = await fetch("/api/wallet/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: u, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
+      sessionStorage.setItem("wallet_token", data.token);
+      setToken(data.token);
+      setPin(""); setMiniStep("username");
+    } catch (e: any) {
+      setMiniError(e.message);
+      setPin("");
+    } finally {
+      setMiniLoading(false);
+    }
   };
 
   const price = product ? parseFloat(product.price) : 0;
   const balance = walletQuery.data?.balance ?? 0;
+  const walletUsername = walletQuery.data?.username ?? "";
   const hasEnough = balance >= price;
 
   return (
     <Dialog open={!!product} onOpenChange={handleClose}>
       <DialogContent className="bg-card border-border max-w-md">
         {result ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center gap-4 py-4 text-center"
-          >
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center gap-4 py-4 text-center">
             <CheckCircle size={52} className="text-green-400" />
             <div>
               <h3 className="font-bold text-lg text-foreground">ซื้อสำเร็จ!</h3>
@@ -329,13 +379,8 @@ function BuyModal({
               <div className="w-full bg-muted/50 border border-border rounded-xl p-4 text-left space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">ลิงก์เข้ากลุ่ม (ใช้ได้ครั้งเดียว)</p>
                 {result.invite_links.map((link, i) => (
-                  <a
-                    key={i}
-                    href={link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full text-center bg-primary text-primary-foreground rounded-lg py-2 text-sm font-semibold hover:bg-primary/90 transition-colors"
-                  >
+                  <a key={i} href={link} target="_blank" rel="noopener noreferrer"
+                    className="block w-full text-center bg-primary text-primary-foreground rounded-lg py-2 text-sm font-semibold hover:bg-primary/90 transition-colors">
                     เข้ากลุ่ม {result.invite_links.length > 1 ? `(${i + 1})` : ""}
                   </a>
                 ))}
@@ -352,101 +397,130 @@ function BuyModal({
           <>
             <DialogHeader>
               <DialogTitle className="text-foreground">{product?.name}</DialogTitle>
-              <p className="text-primary font-bold text-xl">
-                {price.toLocaleString("th-TH")} เครดิต
-              </p>
+              <p className="text-primary font-bold text-xl">{price.toLocaleString("th-TH")} เครดิต</p>
             </DialogHeader>
 
-            {!username ? (
+            {/* Not logged in → mini login */}
+            {!isTokenValid && (
               <div className="space-y-3 pt-1">
-                <p className="text-sm text-muted-foreground">ใส่ Telegram Username เพื่อเชื่อมกระเป๋าเครดิตของคุณ</p>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
-                  <input
-                    className="w-full bg-muted border border-border rounded-lg pl-7 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="username ของคุณ"
-                    value={inputUsername.replace(/^@/, "")}
-                    onChange={e => setInputUsername(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleSetUsername()}
-                  />
+                <div className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-2 text-xs text-muted-foreground">
+                  <Lock size={12} className="shrink-0" />
+                  <span>กรุณาเข้าสู่ระบบกระเป๋าเครดิตก่อนซื้อ</span>
                 </div>
-                <Button className="w-full" onClick={handleSetUsername} disabled={!inputUsername.trim()}>
-                  ยืนยัน Username
-                </Button>
-                <button
-                  onClick={() => setShowHelp(v => !v)}
-                  className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5"
-                >
-                  <HelpCircle size={12} /> ไม่รู้จะหา Username ได้จากไหน?
-                </button>
-                {showHelp && (
-                  <div className="bg-muted rounded-lg p-3 text-xs text-muted-foreground space-y-1.5">
-                    <p>1. เปิด Telegram → Settings</p>
-                    <p>2. ดูช่อง <span className="text-foreground font-medium">Username</span> (มี @ นำหน้า)</p>
-                    <p>3. ถ้าไม่มี ให้กด Edit Profile แล้วตั้งก่อน</p>
-                  </div>
+
+                {miniStep === "username" && (
+                  <>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
+                      <input
+                        className="w-full bg-muted border border-border rounded-lg pl-7 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="Telegram username ของคุณ"
+                        value={inputUsername.replace(/^@/, "")}
+                        onChange={e => setInputUsername(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleMiniCheckUser()}
+                        disabled={miniLoading}
+                      />
+                    </div>
+                    {miniError && <p className="text-red-400 text-xs">{miniError}</p>}
+                    <Button className="w-full" onClick={handleMiniCheckUser} disabled={!inputUsername.trim() || miniLoading}>
+                      {miniLoading ? <Loader size={14} className="animate-spin" /> : "ต่อไป"}
+                    </Button>
+                    <button onClick={() => { handleClose(); setLocation("/wallet"); }}
+                      className="w-full text-xs text-muted-foreground hover:text-primary text-center transition-colors">
+                      ยังไม่มีบัญชี? สมัครที่กระเป๋าเครดิต →
+                    </button>
+                  </>
+                )}
+
+                {miniStep === "pin" && (
+                  <>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+                        PIN ของ @{inputUsername.replace(/^@/, "")}
+                      </label>
+                      <div className="relative">
+                        <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          className="w-full bg-muted border border-border rounded-lg pl-9 pr-10 py-2.5 text-sm text-foreground tracking-widest focus:outline-none focus:ring-1 focus:ring-primary"
+                          type={showPin ? "text" : "password"}
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="● ● ● ●"
+                          value={pin}
+                          disabled={miniLoading}
+                          onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          onKeyDown={e => e.key === "Enter" && handleMiniAuth()}
+                          autoFocus
+                        />
+                        <button type="button" tabIndex={-1}
+                          onClick={() => setShowPin(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                          {showPin ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                    {miniError && <p className="text-red-400 text-xs">{miniError}</p>}
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => { setMiniStep("username"); setPin(""); setMiniError(""); }}>
+                        ← กลับ
+                      </Button>
+                      <Button className="flex-1" onClick={handleMiniAuth} disabled={pin.length < 4 || miniLoading}>
+                        {miniLoading ? <Loader size={14} className="animate-spin" /> : "เข้าสู่ระบบ"}
+                      </Button>
+                    </div>
+                  </>
                 )}
               </div>
-            ) : (
+            )}
+
+            {/* Logged in → show balance and buy button */}
+            {isTokenValid && (
               <div className="space-y-4 pt-1">
-                <div className="bg-muted rounded-xl p-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-0.5">บัญชี @{username}</p>
-                    {walletQuery.isLoading ? (
-                      <div className="h-5 w-24 bg-muted-foreground/20 animate-pulse rounded" />
-                    ) : (
+                {walletQuery.isLoading ? (
+                  <div className="h-16 bg-muted animate-pulse rounded-xl" />
+                ) : (
+                  <div className="bg-muted rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-0.5">บัญชี @{walletUsername}</p>
                       <p className={`text-lg font-bold ${hasEnough ? "text-foreground" : "text-red-400"}`}>
                         {balance.toLocaleString("th-TH")} เครดิต
                       </p>
-                    )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground mb-0.5">ราคาสินค้า</p>
+                      <p className="text-lg font-bold text-primary">{price.toLocaleString("th-TH")}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground mb-0.5">ราคาสินค้า</p>
-                    <p className="text-lg font-bold text-primary">{price.toLocaleString("th-TH")}</p>
-                  </div>
-                </div>
+                )}
 
                 {!hasEnough && !walletQuery.isLoading && (
                   <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400 flex items-center justify-between">
                     <span>เครดิตไม่พอ (ขาด {(price - balance).toLocaleString("th-TH")} เครดิต)</span>
-                    <button
-                      onClick={() => { handleClose(); setLocation("/wallet"); }}
-                      className="text-xs underline whitespace-nowrap ml-2"
-                    >
+                    <button onClick={() => { handleClose(); setLocation("/wallet"); }} className="text-xs underline whitespace-nowrap ml-2">
                       เติมเงิน
                     </button>
                   </div>
                 )}
 
                 {error && (
-                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-400">
-                    {error}
-                  </div>
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-400">{error}</div>
                 )}
 
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { setUsername(""); setInputUsername(""); localStorage.removeItem("wallet_username"); }}
-                    className="text-xs"
-                  >
-                    เปลี่ยน
+                  <Button variant="outline" size="sm" className="text-xs"
+                    onClick={() => { sessionStorage.removeItem("wallet_token"); setToken(""); setMiniStep("username"); setError(""); }}>
+                    เปลี่ยนบัญชี
                   </Button>
-                  <Button
-                    className="flex-1 font-bold"
+                  <Button className="flex-1 font-bold"
                     disabled={!hasEnough || purchaseMutation.isPending || walletQuery.isLoading}
-                    onClick={() => { setError(""); purchaseMutation.mutate(); }}
-                  >
+                    onClick={() => { setError(""); purchaseMutation.mutate(); }}>
                     {purchaseMutation.isPending ? <Loader size={14} className="animate-spin" /> : <ShoppingBag size={14} />}
                     {purchaseMutation.isPending ? "กำลังดำเนินการ..." : `ซื้อ ${price.toLocaleString()} เครดิต`}
                   </Button>
                 </div>
 
-                <button
-                  onClick={() => { handleClose(); setLocation("/wallet"); }}
-                  className="w-full text-xs text-muted-foreground hover:text-primary flex items-center justify-center gap-1.5 transition-colors"
-                >
+                <button onClick={() => { handleClose(); setLocation("/wallet"); }}
+                  className="w-full text-xs text-muted-foreground hover:text-primary flex items-center justify-center gap-1.5 transition-colors">
                   <Wallet size={12} /> ดูกระเป๋าเครดิต / เติมเงิน
                 </button>
               </div>

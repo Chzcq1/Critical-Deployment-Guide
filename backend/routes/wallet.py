@@ -1,11 +1,17 @@
 import json
 import logging
+import os
 import re
-import httpx
+from datetime import datetime, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+import bcrypt
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+
 from backend.database import get_db
 from backend.models import Customer, TopupRequest, CreditTransaction, StoreSettings
 from backend.routes.admin import get_admin, _get_setting
@@ -15,43 +21,136 @@ router = APIRouter()
 
 TRUEMONEY_API = "https://gateway.autozy.app/api/giftvoucher/{code}/{phone}/"
 
+_JWT_SECRET = os.environ.get("SECRET_KEY", "wallet-pin-secret-change-in-production")
+_JWT_ALG = "HS256"
+_TOKEN_EXPIRE_DAYS = 7
 
-def _get_or_create_customer(db: Session, username: str) -> Customer:
-    uname = username.lstrip("@").strip().lower()
-    if not uname:
-        raise HTTPException(status_code=400, detail="กรุณาระบุ Telegram Username")
-    customer = db.query(Customer).filter(Customer.telegram_username == uname).first()
+
+# ── PIN / Token helpers ───────────────────────────────────────────────────────
+
+def _hash_pin(pin: str) -> str:
+    return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
+
+
+def _verify_pin(pin: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pin.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+def _create_token(username: str) -> str:
+    exp = datetime.utcnow() + timedelta(days=_TOKEN_EXPIRE_DAYS)
+    return jwt.encode({"sub": username, "exp": exp}, _JWT_SECRET, algorithm=_JWT_ALG)
+
+
+def _decode_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALG])
+        return payload["sub"]
+    except JWTError:
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบใหม่ (session หมดอายุ)")
+
+
+def get_wallet_customer(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+) -> Customer:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบกระเป๋าเครดิตก่อน")
+    token = authorization.split(" ", 1)[1]
+    username = _decode_token(token)
+    customer = db.query(Customer).filter(Customer.telegram_username == username).first()
     if not customer:
-        customer = Customer(telegram_username=uname, balance=Decimal("0.00"))
-        db.add(customer)
-        db.commit()
-        db.refresh(customer)
+        raise HTTPException(status_code=401, detail="ไม่พบบัญชีผู้ใช้")
     return customer
 
 
-def _extract_voucher_code(raw: str) -> str:
-    raw = raw.strip()
-    match = re.search(r"[?&]v=([A-Za-z0-9]+)", raw)
-    if match:
-        return match.group(1)
-    if re.match(r"^[A-Za-z0-9]+$", raw):
-        return raw
-    raise HTTPException(status_code=400, detail="รูปแบบลิงก์ซองไม่ถูกต้อง กรุณาวาง link เต็มหรือรหัสซอง")
+def _normalize_username(raw: str) -> str:
+    u = raw.lstrip("@").strip().lower()
+    if not u:
+        raise HTTPException(status_code=400, detail="กรุณาระบุ Telegram Username")
+    return u
 
 
-@router.get("/wallet/{username}")
-def get_wallet(username: str, db: Session = Depends(get_db)):
-    customer = _get_or_create_customer(db, username)
+# ── Public: check if account exists ──────────────────────────────────────────
+
+@router.get("/wallet/check/{username}")
+def wallet_check(username: str, db: Session = Depends(get_db)):
+    """Return whether account & PIN exist — used by frontend to decide login vs register flow."""
+    uname = _normalize_username(username)
+    customer = db.query(Customer).filter(Customer.telegram_username == uname).first()
+    if not customer or not customer.pin_hash:
+        return {"exists": bool(customer), "has_pin": False}
+    return {"exists": True, "has_pin": True}
+
+
+# ── Public: authenticate (login / register) ───────────────────────────────────
+
+@router.post("/wallet/auth")
+def wallet_auth(body: dict, db: Session = Depends(get_db)):
+    """
+    Login or register a wallet account.
+    - New account: creates it and sets PIN.
+    - Existing account without PIN: sets PIN.
+    - Existing account with PIN: verifies PIN.
+    Returns a JWT token valid for 7 days.
+    """
+    username = _normalize_username(body.get("username", ""))
+    pin = str(body.get("pin", "")).strip()
+    confirm_pin = str(body.get("confirm_pin", "")).strip()
+
+    if not pin or not pin.isdigit() or not (4 <= len(pin) <= 6):
+        raise HTTPException(status_code=400, detail="PIN ต้องเป็นตัวเลข 4-6 หลัก")
+
+    customer = db.query(Customer).filter(Customer.telegram_username == username).first()
+
+    if not customer:
+        # Brand new account — require confirm_pin
+        if confirm_pin and pin != confirm_pin:
+            raise HTTPException(status_code=400, detail="PIN ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง")
+        customer = Customer(
+            telegram_username=username,
+            balance=Decimal("0.00"),
+            pin_hash=_hash_pin(pin),
+        )
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+        return {"token": _create_token(username), "is_new": True, "balance": 0.0}
+
+    if not customer.pin_hash:
+        # Existing account without PIN — set PIN now
+        if confirm_pin and pin != confirm_pin:
+            raise HTTPException(status_code=400, detail="PIN ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง")
+        customer.pin_hash = _hash_pin(pin)
+        db.commit()
+        return {"token": _create_token(username), "is_new": False, "balance": float(customer.balance or 0)}
+
+    # Existing account with PIN — verify
+    if not _verify_pin(pin, customer.pin_hash):
+        raise HTTPException(status_code=400, detail="PIN ไม่ถูกต้อง")
+
+    return {"token": _create_token(username), "is_new": False, "balance": float(customer.balance or 0)}
+
+
+# ── Protected: wallet info ────────────────────────────────────────────────────
+
+@router.get("/wallet/me")
+def get_my_wallet(
+    customer: Customer = Depends(get_wallet_customer),
+    db: Session = Depends(get_db),
+):
     txns = (
         db.query(CreditTransaction)
         .filter(CreditTransaction.customer_id == customer.id)
         .order_by(desc(CreditTransaction.id))
-        .limit(30)
+        .limit(50)
         .all()
     )
     return {
         "username": customer.telegram_username,
-        "balance": float(customer.balance),
+        "balance": float(customer.balance or 0),
         "transactions": [
             {
                 "id": t.id,
@@ -65,19 +164,19 @@ def get_wallet(username: str, db: Session = Depends(get_db)):
     }
 
 
+# ── Protected: top-up via slip ────────────────────────────────────────────────
+
 @router.post("/wallet/topup/slip")
 async def topup_slip(
     body: dict,
+    customer: Customer = Depends(get_wallet_customer),
     db: Session = Depends(get_db),
 ):
-    username = body.get("username", "")
     payment_proof = body.get("payment_proof", "")
     amount_hint = body.get("amount_hint")
 
-    if not username or not payment_proof:
-        raise HTTPException(status_code=400, detail="กรุณาระบุ username และสลีปโอนเงิน")
-
-    customer = _get_or_create_customer(db, username)
+    if not payment_proof:
+        raise HTTPException(status_code=400, detail="กรุณาแนบสลีปโอนเงิน")
 
     topup = TopupRequest(
         customer_id=customer.id,
@@ -107,7 +206,9 @@ async def topup_slip(
 
             if result["status"] == "verified":
                 detected_amount = result.get("amount")
-                credit = Decimal(str(detected_amount)) if detected_amount else (Decimal(str(amount_hint)) if amount_hint else None)
+                credit = Decimal(str(detected_amount)) if detected_amount else (
+                    Decimal(str(amount_hint)) if amount_hint else None
+                )
                 if credit and credit > 0:
                     topup.amount = credit
                     topup.status = "approved"
@@ -140,19 +241,23 @@ async def topup_slip(
     return {"ok": True, "auto_approved": False, "topup_id": topup.id, "status": "pending"}
 
 
+# ── Protected: top-up via TrueMoney ──────────────────────────────────────────
+
 @router.post("/wallet/topup/truemoney")
-async def topup_truemoney(body: dict, db: Session = Depends(get_db)):
-    username = body.get("username", "")
+async def topup_truemoney(
+    body: dict,
+    customer: Customer = Depends(get_wallet_customer),
+    db: Session = Depends(get_db),
+):
     voucher_raw = body.get("voucher", "")
     phone = body.get("phone", "")
 
-    if not username or not voucher_raw:
-        raise HTTPException(status_code=400, detail="กรุณาระบุ username และลิงก์ซอง")
-    if not phone or len(phone.replace("-", "").replace(" ", "")) < 9:
+    if not voucher_raw:
+        raise HTTPException(status_code=400, detail="กรุณาระบุลิงก์ซอง")
+    if not phone or len(re.sub(r"[^0-9]", "", phone)) < 9:
         raise HTTPException(status_code=400, detail="กรุณาระบุเบอร์โทรที่ผูกกับ TrueMoney Wallet")
 
     voucher_code = _extract_voucher_code(voucher_raw)
-    customer = _get_or_create_customer(db, username)
 
     existing = db.query(TopupRequest).filter(
         TopupRequest.voucher_code == voucher_code,
@@ -180,7 +285,6 @@ async def topup_truemoney(body: dict, db: Session = Depends(get_db)):
                 resp = await client.get(url)
             data = resp.json()
             logger.info(f"TrueMoney API response for topup #{topup.id}: {data}")
-
             topup.truemoney_result = json.dumps(data, ensure_ascii=False)
 
             if str(data.get("code")) == "200" and data.get("status") == "success":
@@ -203,7 +307,6 @@ async def topup_truemoney(body: dict, db: Session = Depends(get_db)):
                     "amount": float(credit),
                     "balance": float(customer.balance),
                     "topup_id": topup.id,
-                    "message": data.get("message", ""),
                 }
             else:
                 msg_map = {
@@ -217,7 +320,6 @@ async def topup_truemoney(body: dict, db: Session = Depends(get_db)):
                 err_code = str(data.get("code", ""))
                 err_msg = msg_map.get(err_code, data.get("message", "แลกซองไม่สำเร็จ"))
                 topup.status = "rejected"
-                topup.truemoney_result = json.dumps(data, ensure_ascii=False)
                 db.commit()
                 raise HTTPException(status_code=400, detail=err_msg)
 
@@ -242,18 +344,21 @@ async def topup_truemoney(body: dict, db: Session = Depends(get_db)):
         return {"ok": True, "auto_approved": False, "topup_id": topup.id, "status": "pending"}
 
 
+# ── Protected: purchase with credits ─────────────────────────────────────────
+
 @router.post("/wallet/purchase")
-async def purchase_with_credits(body: dict, db: Session = Depends(get_db)):
+async def purchase_with_credits(
+    body: dict,
+    customer: Customer = Depends(get_wallet_customer),
+    db: Session = Depends(get_db),
+):
     from backend.models import Order, Product
     from backend import bot as bot_module
 
-    username = body.get("username", "")
     product_id = body.get("product_id")
+    if not product_id:
+        raise HTTPException(status_code=400, detail="กรุณาระบุสินค้า")
 
-    if not username or not product_id:
-        raise HTTPException(status_code=400, detail="กรุณาระบุ username และสินค้า")
-
-    customer = _get_or_create_customer(db, username)
     product = db.query(Product).filter(Product.id == product_id, Product.is_active == True).first()
     if not product:
         raise HTTPException(status_code=404, detail="ไม่พบสินค้า")
@@ -306,7 +411,19 @@ async def purchase_with_credits(body: dict, db: Session = Depends(get_db)):
     }
 
 
-# ── Admin endpoints ──────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _extract_voucher_code(raw: str) -> str:
+    raw = raw.strip()
+    match = re.search(r"[?&]v=([A-Za-z0-9]+)", raw)
+    if match:
+        return match.group(1)
+    if re.match(r"^[A-Za-z0-9]+$", raw):
+        return raw
+    raise HTTPException(status_code=400, detail="รูปแบบลิงก์ซองไม่ถูกต้อง กรุณาวาง link เต็มหรือรหัสซอง")
+
+
+# ── Admin endpoints ───────────────────────────────────────────────────────────
 
 @router.get("/admin/topup-requests")
 def admin_list_topups(
