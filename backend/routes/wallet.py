@@ -250,12 +250,13 @@ async def topup_truemoney(
     db: Session = Depends(get_db),
 ):
     voucher_raw = body.get("voucher", "")
-    phone = body.get("phone", "")
 
     if not voucher_raw:
         raise HTTPException(status_code=400, detail="กรุณาระบุลิงก์ซอง")
+
+    phone = _get_setting(db, "truemoney_phone") or ""
     if not phone or len(re.sub(r"[^0-9]", "", phone)) < 9:
-        raise HTTPException(status_code=400, detail="กรุณาระบุเบอร์โทรที่ผูกกับ TrueMoney Wallet")
+        raise HTTPException(status_code=400, detail="แอดมินยังไม่ได้ตั้งค่าเบอร์ TrueMoney รับเงิน — กรุณาแจ้งแอดมิน")
 
     voucher_code = _extract_voucher_code(voucher_raw)
 

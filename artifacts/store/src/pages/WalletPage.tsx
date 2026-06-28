@@ -348,10 +348,9 @@ export default function WalletPage() {
   const tmMutation = useMutation({
     mutationFn: async () => {
       if (!voucherLink.trim()) throw new Error("กรุณาใส่ลิงก์ซอง");
-      if (!tmPhone.trim()) throw new Error("กรุณาใส่เบอร์โทรที่ผูก TrueMoney");
       const res = await fetch("/api/wallet/topup/truemoney", {
         method: "POST", headers: authHeaders,
-        body: JSON.stringify({ voucher: voucherLink.trim(), phone: tmPhone.trim() }),
+        body: JSON.stringify({ voucher: voucherLink.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
@@ -503,11 +502,6 @@ export default function WalletPage() {
                     <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="https://gift.truemoney.com/campaign/?v=..." value={voucherLink} onChange={e => setVoucherLink(e.target.value)} />
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">เบอร์โทรที่ผูก TrueMoney Wallet</label>
-                    <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      placeholder="08x-xxx-xxxx" value={tmPhone} onChange={e => setTmPhone(e.target.value)} type="tel" />
-                  </div>
                   <div className="flex items-start gap-2 bg-blue-500/5 border border-blue-500/20 rounded-lg p-2.5 text-xs text-blue-300">
                     <Info size={13} className="shrink-0 mt-0.5" />
                     <p>ระบบจะแลกซองอัตโนมัติ เครดิตเพิ่มทันที 1 บาท = 1 เครดิต</p>
@@ -555,7 +549,7 @@ export default function WalletPage() {
 
               <div className="flex gap-2">
                 <Button variant="outline" onClick={handleTopupClose} className="flex-1">ยกเลิก</Button>
-                <Button onClick={handleTopupSubmit} disabled={isPending || (topupType === "slip" ? !slipFile : !voucherLink || !tmPhone)} className="flex-1">
+                <Button onClick={handleTopupSubmit} disabled={isPending || (topupType === "slip" ? !slipFile : !voucherLink)} className="flex-1">
                   {isPending ? <Loader size={14} className="animate-spin" /> : "ยืนยันเติมเงิน"}
                 </Button>
               </div>

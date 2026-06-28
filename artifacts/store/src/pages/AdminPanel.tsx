@@ -303,6 +303,7 @@ interface StoreSettings {
   finance_admin_names: string;
   slip_verify_mode: string;
   receiver_bank_code: string;
+  truemoney_phone: string;
 }
 
 function authHeaders(token: string) {
@@ -1255,6 +1256,7 @@ function SettingsTab({ token }: { token: string }) {
     finance_admin_names: "",
     slip_verify_mode: "off",
     receiver_bank_code: "",
+    truemoney_phone: "",
   });
 
   const [initialized, setInitialized] = useState(false);
@@ -1387,6 +1389,19 @@ function SettingsTab({ token }: { token: string }) {
           {form.bank_qr_url && (
             <img src={form.bank_qr_url} alt="QR Preview" className="mt-2 w-24 h-24 rounded-lg border border-border object-contain bg-white" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">🧧 เบอร์ TrueMoney Wallet (รับเงินซองอั่งเปา)</label>
+          <input
+            type="tel"
+            value={form.truemoney_phone}
+            onChange={(e) => setForm((f) => ({ ...f, truemoney_phone: e.target.value }))}
+            placeholder="เช่น 0812345678"
+            className="bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          />
+          <p className="text-xs text-muted-foreground mt-0.5">
+            เบอร์นี้จะใช้รับเงินเมื่อลูกค้าส่งซองอั่งเปา — ลูกค้าไม่ต้องกรอกเบอร์เอง
+          </p>
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ธนาคารผู้รับ (สำหรับตรวจสลีป Slip2Go)</label>

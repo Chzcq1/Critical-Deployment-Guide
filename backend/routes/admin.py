@@ -305,6 +305,7 @@ def _build_settings_response(db: Session) -> StoreSettingsResponse:
         finance_admin_names=_get_setting(db, "finance_admin_names"),
         slip_verify_mode=_get_setting(db, "slip_verify_mode") or "off",
         receiver_bank_code=_get_setting(db, "receiver_bank_code") or "",
+        truemoney_phone=_get_setting(db, "truemoney_phone") or "",
     )
 
 

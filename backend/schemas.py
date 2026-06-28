@@ -127,6 +127,7 @@ class StoreSettingsUpdate(BaseModel):
     finance_admin_names: Optional[str] = None
     slip_verify_mode: Optional[str] = None
     receiver_bank_code: Optional[str] = None
+    truemoney_phone: Optional[str] = None
 
 
 class StoreSettingsResponse(BaseModel):
@@ -141,6 +142,7 @@ class StoreSettingsResponse(BaseModel):
     finance_admin_names: str
     slip_verify_mode: str
     receiver_bank_code: str
+    truemoney_phone: str
 
 
 class AdminLogCreate(BaseModel):
