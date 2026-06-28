@@ -13,6 +13,7 @@ from jwt.exceptions import InvalidTokenError as JWTError
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
+from backend.config import get_settings
 from backend.database import get_db
 from backend.models import Customer, TopupRequest, CreditTransaction, StoreSettings
 from backend.routes.admin import get_admin, _get_setting
@@ -226,7 +227,7 @@ def wallet_reset_pin(body: dict, db: Session = Depends(get_db)):
     if not customer:
         raise HTTPException(status_code=404, detail="ไม่พบบัญชีผู้ใช้")
 
-    customer.pin_hash = _hashlib.sha256(new_pin.encode()).hexdigest()
+    customer.pin_hash = _hash_pin(new_pin)
     db.commit()
 
     return {"success": True, "message": "รีเซ็ท PIN สำเร็จ กรุณาล็อคอินด้วย PIN ใหม่"}

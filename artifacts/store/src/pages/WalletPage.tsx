@@ -168,7 +168,10 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
   const [botInfoLoaded, setBotInfoLoaded] = useState(false);
   const [otpInput, setOtpInput] = useState("");
   const [isForgotPin, setIsForgotPin] = useState(false);
+  const [otpSendCount, setOtpSendCount] = useState(0);
+  const [otpCooldown, setOtpCooldown] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetch("/api/wallet/bot-info")
@@ -202,24 +205,47 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [step, sessionToken]);
 
+  const OTP_MAX_FREE = 3;
+  const OTP_COOLDOWN_SEC = 60;
+
+  const startCooldown = () => {
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    setOtpCooldown(OTP_COOLDOWN_SEC);
+    cooldownRef.current = setInterval(() => {
+      setOtpCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   const resetToUsername = () => {
     if (pollingRef.current) clearInterval(pollingRef.current);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
     setStep("username"); setPin(""); setOtpInput(""); setError("");
     setSessionToken(""); setBotUrl(""); setVerifiedToken("");
-    setIsForgotPin(false);
+    setIsForgotPin(false); setOtpSendCount(0); setOtpCooldown(0);
+  };
+
+  const sendOtp = async (u: string, mode = "register") => {
+    const newCount = otpSendCount + 1;
+    setOtpSendCount(newCount);
+    const otpRes = await fetch("/api/wallet/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: u, mode }),
+    });
+    const otpData = await otpRes.json();
+    if (!otpRes.ok) throw new Error(otpData.detail || "เกิดข้อผิดพลาด");
+    if (newCount >= OTP_MAX_FREE) startCooldown();
+    return otpData;
   };
 
   const startForgotPin = async () => {
-    if (!username) return;
+    if (!username || otpCooldown > 0) return;
     setLoading(true); setError(""); setIsForgotPin(true);
     try {
-      const otpRes = await fetch("/api/wallet/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, mode: "reset" }),
-      });
-      const otpData = await otpRes.json();
-      if (!otpRes.ok) throw new Error(otpData.detail || "เกิดข้อผิดพลาด");
+      const otpData = await sendOtp(username, "reset");
       setSessionToken(otpData.session_token);
       setBotUrl(otpData.bot_url);
       setPin(""); setConfirmPin(""); setOtpInput("");
@@ -227,6 +253,21 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     } catch (e: any) {
       setError(e.message);
       setIsForgotPin(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    if (otpCooldown > 0 || !username) return;
+    setLoading(true); setError("");
+    try {
+      const mode = isForgotPin ? "reset" : "register";
+      const otpData = await sendOtp(username, mode);
+      setSessionToken(otpData.session_token);
+      setBotUrl(otpData.bot_url);
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
@@ -243,13 +284,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
       if (data.has_pin) {
         setStep("pin");
       } else {
-        const otpRes = await fetch("/api/wallet/send-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: u }),
-        });
-        const otpData = await otpRes.json();
-        if (!otpRes.ok) throw new Error(otpData.detail || "เกิดข้อผิดพลาด");
+        const otpData = await sendOtp(u);
         setSessionToken(otpData.session_token);
         setBotUrl(otpData.bot_url);
         setStep("otp_wait");
@@ -466,9 +501,24 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
                   กำลังรอรหัส OTP สำหรับ @{username}...
                 </div>
                 {error && <p className="text-red-400 text-xs text-center">{error}</p>}
-                <button onClick={resetToUsername} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
-                  ← เปลี่ยน Username / ขอรหัสใหม่
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={resendOtp}
+                    disabled={loading || otpCooldown > 0}
+                    className="flex-1 text-xs text-primary/70 hover:text-primary disabled:text-muted-foreground disabled:cursor-not-allowed text-center transition-colors flex items-center justify-center gap-1"
+                  >
+                    {otpCooldown > 0 ? (
+                      <><Clock size={11} /> ขอใหม่ได้ใน {otpCooldown}s</>
+                    ) : loading ? (
+                      <><Loader size={11} className="animate-spin" /> กำลังส่ง...</>
+                    ) : (
+                      "↺ ขอรหัสใหม่"
+                    )}
+                  </button>
+                  <button onClick={resetToUsername} className="flex-1 text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
+                    ← เปลี่ยน Username
+                  </button>
+                </div>
               </>
             )}
 
