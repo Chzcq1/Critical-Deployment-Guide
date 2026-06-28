@@ -161,10 +161,16 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
   const [sessionToken, setSessionToken] = useState("");
   const [botUrl, setBotUrl] = useState("");
   const [verifiedToken, setVerifiedToken] = useState("");
+  const [otpBotUrl, setOtpBotUrl] = useState<string | null>(null);
+  const [otpBotUsername, setOtpBotUsername] = useState<string | null>(null);
   const [otpInput, setOtpInput] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    fetch("/api/wallet/bot-info")
+      .then(r => r.json())
+      .then(d => { setOtpBotUrl(d.bot_url); setOtpBotUsername(d.otp_bot_username); })
+      .catch(() => {});
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, []);
 
@@ -309,16 +315,38 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
               <>
                 <p className="text-sm font-semibold text-foreground text-center">ก่อนสมัคร ทำขั้นตอนนี้ก่อนนะครับ 👇</p>
                 <div className="space-y-2.5">
-                  {([
-                    ["1", "📱", "เปิดแอป Telegram บนมือถือของคุณ"],
-                    ["2", "🤖", "กด \"เปิด Bot\" แล้วกด START ในแอป Telegram"],
-                    ["3", "🔢", "กลับมาที่นี่ กรอก Username แล้วรับรหัส OTP"],
-                  ] as const).map(([n, icon, text]) => (
-                    <div key={n} className="flex items-start gap-3 bg-muted/50 rounded-xl p-3">
-                      <span className="w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center text-xs font-bold shrink-0">{n}</span>
-                      <p className="text-sm text-foreground">{icon} {text}</p>
+                  {/* Step 1 */}
+                  <div className="flex items-start gap-3 bg-muted/50 rounded-xl p-3">
+                    <span className="w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                    <p className="text-sm text-foreground">📱 เปิดแอป Telegram บนมือถือของคุณ</p>
+                  </div>
+                  {/* Step 2 — ปุ่มเปิดบอท */}
+                  <div className="flex items-start gap-3 bg-muted/50 rounded-xl p-3">
+                    <span className="w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                    <div className="flex-1 space-y-2">
+                      <p className="text-sm text-foreground">🤖 กดปุ่มด้านล่างเพื่อเปิดบอท แล้วกด <strong>START</strong></p>
+                      {otpBotUrl ? (
+                        <a
+                          href={otpBotUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 w-full bg-[#229ED9] hover:bg-[#1a8bbf] text-white rounded-lg py-2 px-3 text-sm font-medium transition-colors"
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
+                          เปิด {otpBotUsername ? `@${otpBotUsername}` : "Telegram Bot"}
+                        </a>
+                      ) : (
+                        <div className="text-xs text-muted-foreground bg-muted rounded-lg py-2 px-3 text-center">
+                          ระบบกำลังโหลดลิงก์บอท...
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  </div>
+                  {/* Step 3 */}
+                  <div className="flex items-start gap-3 bg-muted/50 rounded-xl p-3">
+                    <span className="w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                    <p className="text-sm text-foreground">🔢 กลับมาที่นี่ กรอก Username แล้วรับรหัส OTP</p>
+                  </div>
                 </div>
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-400 text-center">
                   ⚠️ ต้อง START บอทก่อน ไม่งั้นระบบส่ง OTP ให้ไม่ได้

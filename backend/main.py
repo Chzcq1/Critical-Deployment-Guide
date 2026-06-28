@@ -169,3 +169,13 @@ async def healthz():
         "bot_configured": bool(settings.bot_token),
         "database_configured": bool(settings.database_url),
     }
+
+
+@app.get("/api/wallet/bot-info")
+async def wallet_bot_info():
+    """Return OTP bot username for the frontend to build the Telegram link."""
+    otp_username = settings.otp_bot_username or settings.bot_username
+    return {
+        "otp_bot_username": otp_username,
+        "bot_url": f"https://t.me/{otp_username}" if otp_username else None,
+    }
