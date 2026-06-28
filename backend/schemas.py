@@ -17,6 +17,7 @@ class ProductBase(BaseModel):
     badge_text: Optional[str] = None
     badge_color: Optional[str] = None
     sales_count: int = 0
+    catalog_group: str = "A"
 
 
 class ProductCreate(ProductBase):
@@ -37,11 +38,13 @@ class ProductUpdate(BaseModel):
     badge_color: Optional[str] = None
     sales_count: Optional[int] = None
     sort_order: Optional[int] = None
+    catalog_group: Optional[str] = None
 
 
 class ProductResponse(ProductBase):
     id: int
     sort_order: int = 0
+    catalog_group: str = "A"
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

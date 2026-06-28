@@ -113,9 +113,37 @@ def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     return AdminToken(access_token=token)
 
 
+@router.get("/admin/catalog/status")
+def get_catalog_status(db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    row = db.query(StoreSettings).filter(StoreSettings.key == "active_catalog").first()
+    active = (row.value or "A") if row else "A"
+    count_a = db.query(Product).filter(Product.catalog_group == "A").count()
+    count_b = db.query(Product).filter(Product.catalog_group == "B").count()
+    return {"active_catalog": active, "count_a": count_a, "count_b": count_b}
+
+
+@router.post("/admin/catalog/flip")
+def flip_catalog(db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    row = db.query(StoreSettings).filter(StoreSettings.key == "active_catalog").first()
+    current = (row.value or "A") if row else "A"
+    new_val = "B" if current == "A" else "A"
+    if row:
+        row.value = new_val
+    else:
+        db.add(StoreSettings(key="active_catalog", value=new_val))
+    db.commit()
+    log = AdminLog(admin_name="admin", action="flip_catalog", details=f"{current} → {new_val}")
+    db.add(log)
+    db.commit()
+    return {"active_catalog": new_val, "previous_catalog": current}
+
+
 @router.get("/admin/products", response_model=List[ProductResponse])
-def admin_list_products(db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
-    return db.query(Product).order_by(Product.sort_order.asc(), Product.id.asc()).all()
+def admin_list_products(catalog: Optional[str] = None, db: Session = Depends(get_db), admin: dict = Depends(get_admin)):
+    q = db.query(Product)
+    if catalog in ("A", "B"):
+        q = q.filter(Product.catalog_group == catalog)
+    return q.order_by(Product.sort_order.asc(), Product.id.asc()).all()
 
 
 @router.post("/admin/products", response_model=ProductResponse, status_code=201)

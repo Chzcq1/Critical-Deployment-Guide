@@ -64,6 +64,8 @@ def _run_migrations(engine):
         "INSERT INTO store_settings (key, value) VALUES ('truemoney_auto_redeem', 'on') ON CONFLICT (key) DO NOTHING",
         # wallet PIN hash column
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS pin_hash VARCHAR(255)",
+        # catalog_group for dual catalog (A/B) system
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS catalog_group VARCHAR(1) NOT NULL DEFAULT 'A'",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

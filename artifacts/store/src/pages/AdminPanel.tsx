@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star, Wallet, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, Activity, UserCheck, Users, Gift, Upload, CreditCard } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, ClipboardList, LogOut, Shield, ChevronRight, Settings, Megaphone, ExternalLink, CheckCircle, XCircle, Loader, ArrowUp, ArrowDown, Star, Wallet, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, Activity, UserCheck, Users, Gift, Upload, CreditCard, BookOpen, FlipHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -272,6 +272,7 @@ interface Product {
   badge_text: string | null;
   badge_color: string | null;
   sales_count: number;
+  catalog_group: string;
 }
 
 interface Order {
@@ -353,6 +354,7 @@ function ProductFormModal({
     badge_text: product?.badge_text ?? "แนะนำ",
     badge_color: product?.badge_color ?? "#f59e0b",
     sales_count: product?.sales_count ?? 0,
+    catalog_group: product?.catalog_group ?? "A",
   });
   const [imageUrls, setImageUrls] = useState<string[]>(initialImageUrls.length > 0 ? initialImageUrls : [product?.image_url ?? ""]);
   const [error, setError] = useState("");
@@ -377,6 +379,7 @@ function ProductFormModal({
         badge_text: form.is_featured ? (form.badge_text || "แนะนำ") : null,
         badge_color: form.is_featured ? (form.badge_color || "#f59e0b") : null,
         sales_count: form.sales_count,
+        catalog_group: form.catalog_group,
       };
       const url = isEdit ? `/api/admin/products/${product!.id}` : "/api/admin/products";
       const method = isEdit ? "PUT" : "POST";
@@ -464,6 +467,30 @@ function ProductFormModal({
           <p className="text-xs text-muted-foreground -mt-1">
             คั่นด้วยคอมมาสำหรับหลายกลุ่ม บอตจะสร้างลิงก์เชิญใช้ครั้งเดียวให้แต่ละกลุ่ม
           </p>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">แคตตาล็อค</label>
+            <div className="flex gap-2">
+              {(["A", "B"] as const).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, catalog_group: g }))}
+                  className={`flex-1 py-2 rounded-lg border text-sm font-bold transition-colors ${
+                    form.catalog_group === g
+                      ? g === "A"
+                        ? "bg-blue-600 border-blue-600 text-white"
+                        : "bg-purple-600 border-purple-600 text-white"
+                      : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ชุด {g}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">สินค้าจะแสดงบนหน้าร้านเมื่อแคตตาล็อคชุดนี้ถูกเปิดใช้งาน</p>
+          </div>
+
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -568,11 +595,86 @@ function ProductFormModal({
   );
 }
 
+function CatalogFlipBanner({ token }: { token: string }) {
+  const qc = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const { data: status } = useQuery<{ active_catalog: string; count_a: number; count_b: number }>({
+    queryKey: ["catalog-status"],
+    queryFn: () => fetch("/api/admin/catalog/status", { headers: authHeaders(token) }).then(r => r.json()),
+    refetchInterval: 30000,
+  });
+
+  const flipMutation = useMutation({
+    mutationFn: () => fetch("/api/admin/catalog/flip", { method: "POST", headers: authHeaders(token) }).then(r => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["catalog-status"] });
+      qc.invalidateQueries({ queryKey: ["admin-products"] });
+      setConfirmOpen(false);
+    },
+  });
+
+  const active = status?.active_catalog ?? "A";
+  const next = active === "A" ? "B" : "A";
+  const activeCount = active === "A" ? (status?.count_a ?? 0) : (status?.count_b ?? 0);
+  const nextCount = next === "A" ? (status?.count_a ?? 0) : (status?.count_b ?? 0);
+
+  return (
+    <>
+      <div className={`rounded-xl border p-4 mb-5 flex items-center justify-between gap-4 ${active === "A" ? "bg-blue-600/10 border-blue-600/30" : "bg-purple-600/10 border-purple-600/30"}`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${active === "A" ? "bg-blue-600/20" : "bg-purple-600/20"}`}>
+            <BookOpen size={18} className={active === "A" ? "text-blue-400" : "text-purple-400"} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-foreground">
+              แคตตาล็อคที่เปิดอยู่: <span className={active === "A" ? "text-blue-400" : "text-purple-400"}>ชุด {active}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              ชุด {active}: {activeCount} สินค้า · ชุด {next}: {nextCount} สินค้า
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setConfirmOpen(true)}
+          className={`gap-1.5 font-bold shrink-0 ${next === "A" ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}
+        >
+          <FlipHorizontal size={13} /> พลิกเป็นชุด {next}
+        </Button>
+      </div>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader><DialogTitle className="text-sm">ยืนยันการพลิกแคตตาล็อค</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-sm text-muted-foreground">
+              หน้าร้านจะแสดงสินค้า<span className={`font-bold mx-1 ${next === "A" ? "text-blue-400" : "text-purple-400"}`}>ชุด {next}</span>
+              ทันที ({nextCount} สินค้า) แทนที่ชุด {active}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setConfirmOpen(false)}>ยกเลิก</Button>
+              <Button
+                className={`flex-1 font-bold ${next === "A" ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}
+                disabled={flipMutation.isPending}
+                onClick={() => flipMutation.mutate()}
+              >
+                {flipMutation.isPending ? <Loader size={13} className="animate-spin" /> : `พลิกเป็นชุด ${next}`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function ProductsTab({ token }: { token: string }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Product | null | "new">(null);
+  const [catalogFilter, setCatalogFilter] = useState<"all" | "A" | "B">("all");
 
-  const { data: products = [], isLoading } = useQuery<Product[]>({
+  const { data: allProducts = [], isLoading } = useQuery<Product[]>({
     queryKey: ["admin-products"],
     queryFn: () =>
       fetch("/api/admin/products", { headers: authHeaders(token) }).then((r) => {
@@ -580,6 +682,8 @@ function ProductsTab({ token }: { token: string }) {
         return r.json();
       }),
   });
+
+  const products = catalogFilter === "all" ? allProducts : allProducts.filter(p => p.catalog_group === catalogFilter);
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
@@ -593,10 +697,26 @@ function ProductsTab({ token }: { token: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-products"] }),
   });
 
+  const countA = allProducts.filter(p => p.catalog_group === "A").length;
+  const countB = allProducts.filter(p => p.catalog_group === "B").length;
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-sm text-muted-foreground">{products.length} สินค้า</h2>
+      <CatalogFlipBanner token={token} />
+
+      <div className="flex justify-between items-center mb-3">
+        <div className="flex gap-1">
+          {([["all", `ทั้งหมด (${allProducts.length})`], ["A", `ชุด A (${countA})`], ["B", `ชุด B (${countB})`]] as const).map(([val, label]) => (
+            <button key={val} onClick={() => setCatalogFilter(val)}
+              className={`text-xs px-2.5 py-1 rounded-lg transition-colors font-medium ${
+                catalogFilter === val
+                  ? val === "A" ? "bg-blue-600 text-white" : val === "B" ? "bg-purple-600 text-white" : "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
         <Button size="sm" onClick={() => setEditing("new")} className="bg-primary text-primary-foreground gap-1">
           <Plus size={14} /> เพิ่มสินค้า
         </Button>
@@ -611,7 +731,7 @@ function ProductsTab({ token }: { token: string }) {
       ) : products.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Package size={32} className="mx-auto mb-2 opacity-40" />
-          <p className="text-sm">ยังไม่มีสินค้า กดเพิ่มสินค้าเพื่อเริ่มต้น</p>
+          <p className="text-sm">ยังไม่มีสินค้า{catalogFilter !== "all" ? `ในชุด ${catalogFilter}` : ""}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -656,6 +776,9 @@ function ProductsTab({ token }: { token: string }) {
                       {p.badge_text || "แนะนำ"}
                     </span>
                   )}
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${p.catalog_group === "A" ? "bg-blue-600/20 text-blue-400" : "bg-purple-600/20 text-purple-400"}`}>
+                    ชุด {p.catalog_group}
+                  </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   ฿{parseFloat(p.price).toLocaleString()}

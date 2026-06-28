@@ -20,6 +20,7 @@ class Product(Base):
     badge_text = Column(String(50), nullable=True)
     badge_color = Column(String(20), nullable=True)
     sales_count = Column(Integer, default=0, nullable=False, server_default="0")
+    catalog_group = Column(String(1), default="A", nullable=False, server_default="A")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
