@@ -302,6 +302,17 @@ async def topup_truemoney(
                     ref_id=topup.id,
                 ))
                 db.commit()
+                try:
+                    from backend import bot as bot_module
+                    await bot_module.send_topup_success(
+                        topup_id=topup.id,
+                        customer_username=customer.telegram_username,
+                        amount=float(credit),
+                        topup_type="truemoney",
+                        voucher_code=voucher_code,
+                    )
+                except Exception as notify_err:
+                    logger.warning(f"Topup success notify error: {notify_err}")
                 return {
                     "ok": True,
                     "auto_approved": True,
@@ -320,17 +331,51 @@ async def topup_truemoney(
                 }
                 err_code = str(data.get("code", ""))
                 err_msg = msg_map.get(err_code, data.get("message", "แลกซองไม่สำเร็จ"))
-                topup.status = "rejected"
+                topup.status = "pending"
                 db.commit()
-                raise HTTPException(status_code=400, detail=err_msg)
+                try:
+                    from backend import bot as bot_module
+                    await bot_module.send_topup_request(
+                        topup_id=topup.id,
+                        customer_username=customer.telegram_username,
+                        amount_hint=None,
+                        topup_type="truemoney",
+                        voucher_code=voucher_code,
+                    )
+                except Exception as notify_err:
+                    logger.warning(f"Topup notify error: {notify_err}")
+                return {
+                    "ok": True,
+                    "auto_approved": False,
+                    "topup_id": topup.id,
+                    "status": "pending",
+                    "message": f"แลกซองอัตโนมัติไม่ได้ ({err_msg}) — ส่งให้แอดมินตรวจสอบแล้ว",
+                }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.warning(f"TrueMoney API error for topup #{topup.id}: {e}")
-            topup.status = "rejected"
+            topup.status = "pending"
             db.commit()
-            raise HTTPException(status_code=500, detail="ไม่สามารถติดต่อ TrueMoney API ได้ กรุณาลองใหม่")
+            try:
+                from backend import bot as bot_module
+                await bot_module.send_topup_request(
+                    topup_id=topup.id,
+                    customer_username=customer.telegram_username,
+                    amount_hint=None,
+                    topup_type="truemoney",
+                    voucher_code=voucher_code,
+                )
+            except Exception as notify_err:
+                logger.warning(f"Topup notify error: {notify_err}")
+            return {
+                "ok": True,
+                "auto_approved": False,
+                "topup_id": topup.id,
+                "status": "pending",
+                "message": "ติดต่อ TrueMoney ไม่ได้ชั่วคราว — ส่งให้แอดมินตรวจสอบแล้ว",
+            }
     else:
         try:
             from backend import bot as bot_module
@@ -339,6 +384,7 @@ async def topup_truemoney(
                 customer_username=customer.telegram_username,
                 amount_hint=None,
                 topup_type="truemoney",
+                voucher_code=voucher_code,
             )
         except Exception as e:
             logger.warning(f"Topup notify error: {e}")

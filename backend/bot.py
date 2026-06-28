@@ -229,14 +229,16 @@ async def send_topup_request(
     customer_username: str,
     amount_hint: float | None,
     topup_type: str,
+    voucher_code: Optional[str] = None,
 ) -> None:
     if not settings.bot_token or not settings.admin_group_id:
         logger.warning("Bot not configured — skipping topup notification")
         return
     from telegram.error import TelegramError
     bot = get_bot()
-    type_label = "สลีปโอนเงิน" if topup_type == "slip" else "ซองอั่งเปา TrueMoney"
+    type_label = "สลีปโอนเงิน" if topup_type == "slip" else "🧧 ซองอั่งเปา TrueMoney"
     amount_str = f"฿{amount_hint:,.0f}" if amount_hint else "ไม่ระบุ"
+    extra = f"\n🔑 Voucher: <code>{voucher_code}</code>" if voucher_code else ""
     try:
         await bot.send_message(
             chat_id=settings.admin_group_id,
@@ -244,13 +246,43 @@ async def send_topup_request(
                 f"💳 <b>คำขอเติมเครดิตใหม่ #{topup_id}</b>\n\n"
                 f"👤 @{customer_username}\n"
                 f"ประเภท: {type_label}\n"
-                f"จำนวน: {amount_str}\n\n"
+                f"จำนวน: {amount_str}"
+                f"{extra}\n\n"
                 f"กรุณาตรวจสอบและอนุมัติในแผงแอดมิน"
             ),
             parse_mode="HTML",
         )
     except TelegramError as e:
         logger.error(f"Failed to send topup notification: {e}")
+
+
+async def send_topup_success(
+    topup_id: int,
+    customer_username: str,
+    amount: float,
+    topup_type: str,
+    voucher_code: Optional[str] = None,
+) -> None:
+    if not settings.bot_token or not settings.admin_group_id:
+        return
+    from telegram.error import TelegramError
+    bot = get_bot()
+    type_label = "สลีปโอนเงิน" if topup_type == "slip" else "🧧 ซองอั่งเปา TrueMoney"
+    extra = f"\n🔑 Voucher: <code>{voucher_code}</code>" if voucher_code else ""
+    try:
+        await bot.send_message(
+            chat_id=settings.admin_group_id,
+            text=(
+                f"✅ <b>เติมเครดิตอัตโนมัติสำเร็จ #{topup_id}</b>\n\n"
+                f"👤 @{customer_username}\n"
+                f"ประเภท: {type_label}\n"
+                f"ยอด: ฿{amount:,.2f}"
+                f"{extra}"
+            ),
+            parse_mode="HTML",
+        )
+    except TelegramError as e:
+        logger.error(f"Failed to send topup success notification: {e}")
 
 
 async def setup_webhook(webhook_url: str) -> bool:
