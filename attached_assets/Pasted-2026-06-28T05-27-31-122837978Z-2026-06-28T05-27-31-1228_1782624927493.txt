@@ -1,0 +1,50 @@
+2026-06-28T05:27:31.122837978Z          ^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.122852599Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/click/core.py", line 1353, in invoke
+2026-06-28T05:27:31.123100554Z     return ctx.invoke(self.callback, **ctx.params)
+2026-06-28T05:27:31.123115365Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.123118965Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/click/core.py", line 907, in invoke
+2026-06-28T05:27:31.123324059Z     return callback(*args, **kwargs)
+2026-06-28T05:27:31.1233402Z            ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.12334623Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/main.py", line 412, in main
+2026-06-28T05:27:31.123494953Z     run(
+2026-06-28T05:27:31.123499573Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/main.py", line 579, in run
+2026-06-28T05:27:31.123659017Z     server.run()
+2026-06-28T05:27:31.123664827Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/server.py", line 65, in run
+2026-06-28T05:27:31.123756379Z     return asyncio.run(self.serve(sockets=sockets))
+2026-06-28T05:27:31.12379998Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.12380417Z   File "/opt/render/project/python/Python-3.11.6/lib/python3.11/asyncio/runners.py", line 190, in run
+2026-06-28T05:27:31.124019095Z     return runner.run(main)
+2026-06-28T05:27:31.124025935Z            ^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.124029085Z   File "/opt/render/project/python/Python-3.11.6/lib/python3.11/asyncio/runners.py", line 118, in run
+2026-06-28T05:27:31.211204366Z     return self._loop.run_until_complete(task)
+2026-06-28T05:27:31.211232867Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.211240947Z   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+2026-06-28T05:27:31.21140564Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
+2026-06-28T05:27:31.211508143Z     await self._serve(sockets)
+2026-06-28T05:27:31.211523033Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/server.py", line 76, in _serve
+2026-06-28T05:27:31.211608185Z     config.load()
+2026-06-28T05:27:31.211616955Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/config.py", line 434, in load
+2026-06-28T05:27:31.211768929Z     self.loaded_app = import_from_string(self.app)
+2026-06-28T05:27:31.211777549Z                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.211783519Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/importer.py", line 22, in import_from_string
+2026-06-28T05:27:31.211886621Z     raise exc from None
+2026-06-28T05:27:31.211891681Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/uvicorn/importer.py", line 19, in import_from_string
+2026-06-28T05:27:31.212013604Z     module = importlib.import_module(module_str)
+2026-06-28T05:27:31.212022784Z              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.212025854Z   File "/opt/render/project/python/Python-3.11.6/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-06-28T05:27:31.212138417Z     return _bootstrap._gcd_import(name[level:], package, level)
+2026-06-28T05:27:31.212178488Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-06-28T05:27:31.212183628Z   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-06-28T05:27:31.212186978Z   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-06-28T05:27:31.212190108Z   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-06-28T05:27:31.212193048Z   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-06-28T05:27:31.212196018Z   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-06-28T05:27:31.212199138Z   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-06-28T05:27:31.212205468Z   File "/opt/render/project/src/backend/main.py", line 125, in <module>
+2026-06-28T05:27:31.212330931Z     from backend.routes.wallet import router as wallet_router
+2026-06-28T05:27:31.212336071Z   File "/opt/render/project/src/backend/routes/wallet.py", line 8, in <module>
+2026-06-28T05:27:31.212430633Z     import bcrypt
+2026-06-28T05:27:31.212440394Z ModuleNotFoundError: No module named 'bcrypt'
+2026-06-28T05:27:33.198691314Z ==> Exited with status 1
+2026-06-28T05:27:33.201467989Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
+2026-06-28T05:27:38.871997843Z ==> Running 'python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT'
