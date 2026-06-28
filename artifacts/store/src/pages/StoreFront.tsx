@@ -838,12 +838,6 @@ export default function StoreFront() {
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 border border-background" />
               )}
             </button>
-            <button
-              onClick={() => { setCheckOrderId(null); setCheckName(""); setShowOrderStatus(true); }}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground bg-muted border border-border hover:border-primary/40 transition-colors"
-            >
-              <Search size={13} /> ออเดอร์
-            </button>
           </div>
         </div>
       </header>
