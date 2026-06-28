@@ -50,11 +50,11 @@ export default defineConfig({
     fs: { strict: true },
     proxy: {
       "/api": {
-        target: process.env.BACKEND_URL || "http://localhost:8000",
+        target: process.env.BACKEND_URL || "http://localhost:8080",
         changeOrigin: true,
       },
       "/webhook": {
-        target: process.env.BACKEND_URL || "http://localhost:8000",
+        target: process.env.BACKEND_URL || "http://localhost:8080",
         changeOrigin: true,
       },
     },

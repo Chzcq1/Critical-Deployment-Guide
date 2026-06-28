@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { ShoppingBag, Upload, Link, Clock, ChevronRight, ChevronLeft, Zap, Megaphone, Search, CheckCircle, XCircle, Loader, Building2, CreditCard, Wallet, HelpCircle, X, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -264,6 +264,7 @@ function BuyModal({
   onClose: () => void;
 }) {
   const [, setLocation] = useLocation();
+  const qc = useQueryClient();
 
   // Read token from sessionStorage (set by WalletPage after PIN login)
   const [token, setToken] = useState(() => sessionStorage.getItem("wallet_token") || "");
@@ -304,7 +305,11 @@ function BuyModal({
       if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
       return data;
     },
-    onSuccess: (data) => setResult(data),
+    onSuccess: (data) => {
+      setResult(data);
+      qc.invalidateQueries({ queryKey: ["wallet-my-orders"] });
+      qc.invalidateQueries({ queryKey: ["wallet-me"] });
+    },
     onError: (e: Error) => setError(e.message),
   });
 

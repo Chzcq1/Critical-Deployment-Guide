@@ -320,8 +320,10 @@ function MyOrdersTab({ token }: { token: string }) {
       if (!res.ok) throw new Error("โหลดไม่ได้");
       return res.json();
     },
-    staleTime: 30_000,
+    staleTime: 0,
     gcTime: 5 * 60_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   if (isLoading) {
