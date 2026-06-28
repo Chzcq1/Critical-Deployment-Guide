@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Plus, ArrowDownLeft, ArrowUpRight, Gift, Upload, ChevronRight,
   Loader, CheckCircle, XCircle, Info, HelpCircle, X, ShoppingBag,
-  Lock, Eye, EyeOff, LogOut, ShieldCheck, Package, ExternalLink, Clock
+  Lock, Eye, EyeOff, LogOut, ShieldCheck, Package, ExternalLink, Clock,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -146,18 +147,55 @@ function OrderStatusBadge({ status }: { status: string }) {
 }
 
 // ── Login / register screen ───────────────────────────────────────────────────
-type LoginStep = "username" | "check" | "pin" | "create_pin" | "confirm_pin";
+type LoginStep = "start_bot" | "username" | "otp_wait" | "otp_entry" | "pin" | "create_pin" | "confirm_pin";
 
 function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: string) => void }) {
-  const [step, setStep] = useState<LoginStep>("username");
+  const [step, setStep] = useState<LoginStep>("start_bot");
   const [username, setUsername] = useState("");
   const [inputUsername, setInputUsername] = useState("");
-  const [hasPin, setHasPin] = useState(false);
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [sessionToken, setSessionToken] = useState("");
+  const [botUrl, setBotUrl] = useState("");
+  const [verifiedToken, setVerifiedToken] = useState("");
+  const [otpInput, setOtpInput] = useState("");
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  }, []);
+
+  useEffect(() => {
+    if (step === "otp_wait" && sessionToken) {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      pollingRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/wallet/otp-status/${sessionToken}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.ready) {
+              clearInterval(pollingRef.current!);
+              setStep("otp_entry");
+            }
+          } else if (res.status === 410) {
+            clearInterval(pollingRef.current!);
+            setError("OTP หมดอายุ กรุณาขอใหม่");
+            setStep("username");
+          }
+        } catch {}
+      }, 2000);
+    }
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  }, [step, sessionToken]);
+
+  const resetToUsername = () => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    setStep("username"); setPin(""); setOtpInput(""); setError("");
+    setSessionToken(""); setBotUrl(""); setVerifiedToken("");
+  };
 
   const checkUser = async () => {
     const u = inputUsername.replace(/^@/, "").trim().toLowerCase();
@@ -167,10 +205,43 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
       const res = await fetch(`/api/wallet/check/${encodeURIComponent(u)}`);
       const data = await res.json();
       setUsername(u);
-      setHasPin(data.has_pin);
-      setStep(data.has_pin ? "pin" : "create_pin");
-    } catch {
-      setError("เกิดข้อผิดพลาด กรุณาลองใหม่");
+      if (data.has_pin) {
+        setStep("pin");
+      } else {
+        const otpRes = await fetch("/api/wallet/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: u }),
+        });
+        const otpData = await otpRes.json();
+        if (!otpRes.ok) throw new Error(otpData.detail || "เกิดข้อผิดพลาด");
+        setSessionToken(otpData.session_token);
+        setBotUrl(otpData.bot_url);
+        setStep("otp_wait");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (otpInput.length < 6) { setError("กรุณากรอกรหัส OTP 6 หลัก"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/wallet/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_token: sessionToken, otp: otpInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
+      setVerifiedToken(data.verified_token);
+      setStep("create_pin");
+    } catch (e: any) {
+      setError(e.message);
+      setOtpInput("");
     } finally {
       setLoading(false);
     }
@@ -181,13 +252,16 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     if (step === "create_pin") { setStep("confirm_pin"); setConfirmPin(""); setError(""); return; }
     if (step === "confirm_pin" && pin !== confirmPin) { setError("PIN ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง"); setConfirmPin(""); return; }
     if (step === "pin" && pin.length < 4) { setError("กรุณาใส่ PIN"); return; }
-
     setLoading(true); setError("");
     try {
       const res = await fetch("/api/wallet/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, pin, confirm_pin: confirmPin || undefined }),
+        body: JSON.stringify({
+          username, pin,
+          confirm_pin: confirmPin || undefined,
+          verified_token: verifiedToken || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "เกิดข้อผิดพลาด");
@@ -201,105 +275,207 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     }
   };
 
+  const stepTitle: Record<LoginStep, string> = {
+    start_bot: "เตรียมพร้อมก่อนสมัครบัญชี",
+    username: "ใส่ Telegram Username ของคุณ",
+    otp_wait: "รอรับรหัส OTP ทาง Telegram",
+    otp_entry: "กรอกรหัส OTP ที่ได้รับ",
+    pin: `ยืนยันตัวตน @${username}`,
+    create_pin: `ตั้ง PIN สำหรับ @${username}`,
+    confirm_pin: "ยืนยัน PIN อีกครั้ง",
+  };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <AnimatePresence>{showHelp && <UsernameHelp onClose={() => setShowHelp(false)} />}</AnimatePresence>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
+
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            {step === "username" ? <Wallet size={28} className="text-primary" /> : <ShieldCheck size={28} className="text-primary" />}
+            {step === "start_bot" && <MessageCircle size={28} className="text-primary" />}
+            {(step === "otp_wait" || step === "otp_entry") && <ShieldCheck size={28} className="text-primary" />}
+            {(step === "username" || step === "pin" || step === "create_pin" || step === "confirm_pin") && <Wallet size={28} className="text-primary" />}
           </div>
           <h1 className="text-2xl font-bold text-foreground">กระเป๋าเครดิต</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {step === "username" && "ใส่ Telegram Username เพื่อเข้าถึงกระเป๋าของคุณ"}
-            {step === "pin" && `ยืนยันตัวตน @${username}`}
-            {step === "create_pin" && `สร้าง PIN สำหรับ @${username}`}
-            {step === "confirm_pin" && "ยืนยัน PIN อีกครั้ง"}
-          </p>
+          <p className="text-muted-foreground text-sm mt-1">{stepTitle[step]}</p>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-          {step === "username" && (
-            <>
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">Telegram Username</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
+        <AnimatePresence mode="wait">
+          <motion.div key={step} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }}
+            className="bg-card border border-border rounded-2xl p-5 space-y-4">
+
+            {/* ── STEP: start_bot ─────────────────────────────────────────── */}
+            {step === "start_bot" && (
+              <>
+                <p className="text-sm font-semibold text-foreground text-center">ก่อนสมัคร ทำขั้นตอนนี้ก่อนนะครับ 👇</p>
+                <div className="space-y-2.5">
+                  {([
+                    ["1", "📱", "เปิดแอป Telegram บนมือถือของคุณ"],
+                    ["2", "🤖", "กด \"เปิด Bot\" แล้วกด START ในแอป Telegram"],
+                    ["3", "🔢", "กลับมาที่นี่ กรอก Username แล้วรับรหัส OTP"],
+                  ] as const).map(([n, icon, text]) => (
+                    <div key={n} className="flex items-start gap-3 bg-muted/50 rounded-xl p-3">
+                      <span className="w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center text-xs font-bold shrink-0">{n}</span>
+                      <p className="text-sm text-foreground">{icon} {text}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-400 text-center">
+                  ⚠️ ต้อง START บอทก่อน ไม่งั้นระบบส่ง OTP ให้ไม่ได้
+                </div>
+                <Button className="w-full gap-2 text-sm" onClick={() => setStep("username")}>
+                  เข้าใจแล้ว ไปต่อ <ChevronRight size={16} />
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  มีบัญชีอยู่แล้ว?{" "}
+                  <button onClick={() => setStep("username")} className="text-primary underline underline-offset-2">เข้าสู่ระบบ</button>
+                </p>
+              </>
+            )}
+
+            {/* ── STEP: username ──────────────────────────────────────────── */}
+            {step === "username" && (
+              <>
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Telegram Username</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
+                    <input
+                      className="w-full bg-muted border border-border rounded-lg pl-7 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      placeholder="username ของคุณ"
+                      value={inputUsername.replace(/^@/, "")}
+                      onChange={e => setInputUsername(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && checkUser()}
+                      disabled={loading}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+                <Button className="w-full" onClick={checkUser} disabled={!inputUsername.trim() || loading}>
+                  {loading ? <Loader size={14} className="animate-spin" /> : <>ต่อไป <ChevronRight size={16} /></>}
+                </Button>
+                <button onClick={() => setShowHelp(true)} className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 transition-colors">
+                  <HelpCircle size={13} /> ไม่รู้จะหา Username ได้จากไหน?
+                </button>
+              </>
+            )}
+
+            {/* ── STEP: otp_wait ──────────────────────────────────────────── */}
+            {step === "otp_wait" && (
+              <>
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto">
+                    <Loader size={24} className="text-blue-400 animate-spin" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">กำลังรอคุณเปิด Telegram</p>
+                  <p className="text-xs text-muted-foreground">กดปุ่มด้านล่าง → กด <b>START</b> ใน Telegram → รหัสจะส่งให้อัตโนมัติ</p>
+                </div>
+                <a href={botUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full bg-[#2AABEE] hover:bg-[#229ED9] text-white rounded-xl py-3 text-sm font-semibold transition-colors">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.32 14.617l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.828.942z"/></svg>
+                  เปิด Telegram เพื่อรับ OTP
+                </a>
+                <div className="bg-muted/60 rounded-xl px-3 py-2.5 text-xs text-muted-foreground text-center flex items-center justify-center gap-1.5">
+                  <Loader size={10} className="animate-spin shrink-0" />
+                  กำลังรอรหัส OTP สำหรับ @{username}...
+                </div>
+                {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+                <button onClick={resetToUsername} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
+                  ← เปลี่ยน Username / ขอรหัสใหม่
+                </button>
+              </>
+            )}
+
+            {/* ── STEP: otp_entry ─────────────────────────────────────────── */}
+            {step === "otp_entry" && (
+              <>
+                <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 text-center">
+                  <CheckCircle size={20} className="text-green-400 mx-auto mb-1" />
+                  <p className="text-xs text-green-400 font-medium">บอทส่ง OTP มาแล้ว! ตรวจสอบใน Telegram DM</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">รหัส OTP (6 หลัก)</label>
                   <input
-                    className="w-full bg-muted border border-border rounded-lg pl-7 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="username ของคุณ"
-                    value={inputUsername.replace(/^@/, "")}
-                    onChange={e => setInputUsername(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && checkUser()}
+                    className="w-full bg-muted border border-border rounded-lg px-3 py-3 text-center text-2xl font-bold tracking-[0.6em] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="○○○○○○"
+                    value={otpInput}
+                    onChange={e => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onKeyDown={e => e.key === "Enter" && otpInput.length === 6 && verifyOtp()}
                     disabled={loading}
+                    autoFocus
                   />
                 </div>
-              </div>
-              {error && <p className="text-red-400 text-xs">{error}</p>}
-              <Button className="w-full" onClick={checkUser} disabled={!inputUsername.trim() || loading}>
-                {loading ? <Loader size={14} className="animate-spin" /> : <>ต่อไป <ChevronRight size={16} /></>}
-              </Button>
-              <button onClick={() => setShowHelp(true)} className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 transition-colors">
-                <HelpCircle size={13} /> ไม่รู้จะหา Username ได้จากไหน?
-              </button>
-            </>
-          )}
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+                <Button className="w-full" onClick={verifyOtp} disabled={otpInput.length < 6 || loading}>
+                  {loading ? <Loader size={14} className="animate-spin" /> : <>ยืนยันรหัส OTP <ChevronRight size={16} /></>}
+                </Button>
+                <button onClick={resetToUsername} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
+                  ← ขอรหัสใหม่ / เปลี่ยน Username
+                </button>
+              </>
+            )}
 
-          {step === "pin" && (
-            <>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-foreground">PIN ของคุณ</label>
-                  <span className="text-xs text-muted-foreground">@{username}</span>
+            {/* ── STEP: pin (existing account) ────────────────────────────── */}
+            {step === "pin" && (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-sm font-medium text-foreground">PIN ของคุณ</label>
+                    <span className="text-xs text-muted-foreground">@{username}</span>
+                  </div>
+                  <PinInput value={pin} onChange={setPin} disabled={loading} />
                 </div>
-                <PinInput value={pin} onChange={setPin} disabled={loading} />
-              </div>
-              {error && <p className="text-red-400 text-xs">{error}</p>}
-              <Button className="w-full" onClick={doAuth} disabled={pin.length < 4 || loading}>
-                {loading ? <Loader size={14} className="animate-spin" /> : "เข้าสู่กระเป๋า"}
-              </Button>
-              <button onClick={() => { setStep("username"); setPin(""); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
-                ← เปลี่ยน Username
-              </button>
-            </>
-          )}
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+                <Button className="w-full" onClick={doAuth} disabled={pin.length < 4 || loading}>
+                  {loading ? <Loader size={14} className="animate-spin" /> : "เข้าสู่กระเป๋า"}
+                </Button>
+                <button onClick={() => { setStep("username"); setPin(""); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
+                  ← เปลี่ยน Username
+                </button>
+              </>
+            )}
 
-          {step === "create_pin" && (
-            <>
-              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs text-primary">
-                <p className="font-medium mb-0.5">บัญชีใหม่ — สร้าง PIN ของคุณ</p>
-                <p className="opacity-80">PIN ใช้ยืนยันตัวตนทุกครั้งที่เข้าใช้กระเป๋า ตัวเลข 4–6 หลัก</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">ตั้ง PIN (4–6 หลัก)</label>
-                <PinInput value={pin} onChange={setPin} placeholder="● ● ● ●" disabled={loading} />
-              </div>
-              {error && <p className="text-red-400 text-xs">{error}</p>}
-              <Button className="w-full" onClick={doAuth} disabled={pin.length < 4 || loading}>
-                {loading ? <Loader size={14} className="animate-spin" /> : <>ถัดไป — ยืนยัน PIN <ChevronRight size={16} /></>}
-              </Button>
-              <button onClick={() => { setStep("username"); setPin(""); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
-                ← เปลี่ยน Username
-              </button>
-            </>
-          )}
+            {/* ── STEP: create_pin ────────────────────────────────────────── */}
+            {step === "create_pin" && (
+              <>
+                <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 text-xs text-primary">
+                  <p className="font-medium mb-0.5">✅ ยืนยันตัวตนสำเร็จ! ตั้ง PIN ของคุณ</p>
+                  <p className="opacity-80">PIN ใช้ล็อคอินทุกครั้ง ตัวเลข 4–6 หลัก อย่าบอกใคร</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">ตั้ง PIN (4–6 หลัก)</label>
+                  <PinInput value={pin} onChange={setPin} placeholder="● ● ● ●" disabled={loading} />
+                </div>
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+                <Button className="w-full" onClick={doAuth} disabled={pin.length < 4 || loading}>
+                  {loading ? <Loader size={14} className="animate-spin" /> : <>ถัดไป <ChevronRight size={16} /></>}
+                </Button>
+              </>
+            )}
 
-          {step === "confirm_pin" && (
-            <>
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">ยืนยัน PIN อีกครั้ง</label>
-                <PinInput value={confirmPin} onChange={setConfirmPin} placeholder="● ● ● ●" disabled={loading} />
-              </div>
-              {error && <p className="text-red-400 text-xs">{error}</p>}
-              <Button className="w-full" onClick={doAuth} disabled={confirmPin.length < 4 || loading}>
-                {loading ? <Loader size={14} className="animate-spin" /> : "สร้างบัญชีและเข้าสู่ระบบ"}
-              </Button>
-              <button onClick={() => { setStep("create_pin"); setConfirmPin(""); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
-                ← แก้ไข PIN
-              </button>
-            </>
-          )}
-        </div>
+            {/* ── STEP: confirm_pin ───────────────────────────────────────── */}
+            {step === "confirm_pin" && (
+              <>
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">ยืนยัน PIN อีกครั้ง</label>
+                  <PinInput value={confirmPin} onChange={setConfirmPin} placeholder="● ● ● ●" disabled={loading} />
+                </div>
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+                <Button className="w-full" onClick={doAuth} disabled={confirmPin.length < 4 || loading}>
+                  {loading ? <Loader size={14} className="animate-spin" /> : "สร้างบัญชีและเข้าสู่ระบบ"}
+                </Button>
+                <button onClick={() => { setStep("create_pin"); setConfirmPin(""); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
+                  ← แก้ไข PIN
+                </button>
+              </>
+            )}
+
+          </motion.div>
+        </AnimatePresence>
 
         <button onClick={() => window.history.back()} className="mt-4 w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
           กลับหน้าหลัก

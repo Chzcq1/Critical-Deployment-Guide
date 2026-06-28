@@ -25,6 +25,26 @@ async def telegram_webhook(request: Request):
 
     update = Update.de_json(data, tg_bot)
 
+    # ── /start otp_TOKEN — wallet registration OTP ──────────────────────
+    if update.message and update.message.text:
+        text = update.message.text.strip()
+        if text.startswith("/start otp_") or text == "/start":
+            payload = text[len("/start "):].strip() if text != "/start" else ""
+            if payload.startswith("otp_"):
+                token = payload[len("otp_"):]
+                chat_id = update.message.chat.id
+                await _handle_wallet_otp_start(token, chat_id)
+            else:
+                chat_id = update.message.chat.id
+                try:
+                    await tg_bot.send_message(
+                        chat_id=chat_id,
+                        text="👋 สวัสดีครับ! บอทนี้ใช้สำหรับระบบกระเป๋าเครดิตของร้านค้า\n\nหากต้องการสมัครกระเป๋าเครดิต กรุณาไปที่หน้าเว็บร้านค้าและทำตามขั้นตอนครับ"
+                    )
+                except Exception:
+                    pass
+        return {"ok": True}
+
     # ── Inline keyboard callbacks (approve / reject) ────────────────────
     if update.callback_query:
         query = update.callback_query
@@ -129,3 +149,54 @@ def _get_group_ids(db, product_id: int) -> str:
     from backend.models import Product
     product = db.query(Product).filter(Product.id == product_id).first()
     return (product.telegram_group_ids or "") if product else ""
+
+
+async def _handle_wallet_otp_start(session_token: str, chat_id: int):
+    """Handle /start otp_TOKEN — generate and send OTP via DM."""
+    import secrets as _secrets
+    from datetime import datetime, timezone
+    from backend.database import SessionLocal
+    from backend.models import WalletOTPSession
+
+    db = SessionLocal()
+    try:
+        session = db.query(WalletOTPSession).filter(
+            WalletOTPSession.session_token == session_token,
+            WalletOTPSession.is_used == False,
+        ).first()
+
+        if not session:
+            await bot_module.get_bot().send_message(
+                chat_id=chat_id,
+                text="❌ ลิงก์นี้หมดอายุหรือไม่ถูกต้อง\n\nกรุณากลับไปที่หน้าเว็บร้านค้าและขอ OTP ใหม่อีกครั้งครับ"
+            )
+            return
+
+        expires = session.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            await bot_module.get_bot().send_message(
+                chat_id=chat_id,
+                text="⏰ ลิงก์นี้หมดอายุแล้ว\n\nกรุณากลับไปที่หน้าเว็บร้านค้าและขอ OTP ใหม่ครับ"
+            )
+            return
+
+        otp = str(_secrets.randbelow(900000) + 100000)
+        session.otp_code = otp
+        session.telegram_chat_id = chat_id
+        db.commit()
+
+        await bot_module.send_wallet_otp(chat_id, otp, session.telegram_username)
+
+    except Exception as e:
+        logger.error(f"Error in _handle_wallet_otp_start: {e}")
+        try:
+            await bot_module.get_bot().send_message(
+                chat_id=chat_id,
+                text="❌ เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้งครับ"
+            )
+        except Exception:
+            pass
+    finally:
+        db.close()

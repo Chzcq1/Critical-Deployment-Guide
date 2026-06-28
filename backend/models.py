@@ -141,3 +141,16 @@ class CreditTransaction(Base):
     description = Column(String(300), nullable=True)
     ref_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class WalletOTPSession(Base):
+    __tablename__ = "wallet_otp_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_token = Column(String(64), unique=True, nullable=False, index=True)
+    telegram_username = Column(String(255), nullable=False, index=True)
+    otp_code = Column(String(6), nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    is_used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)

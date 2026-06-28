@@ -285,6 +285,32 @@ async def send_topup_success(
         logger.error(f"Failed to send topup success notification: {e}")
 
 
+async def send_wallet_otp(chat_id: int, otp_code: str, username: str) -> bool:
+    """Send OTP via DM for wallet registration verification."""
+    if not settings.bot_token:
+        logger.warning("BOT_TOKEN not set — cannot send wallet OTP")
+        return False
+    bot = get_bot()
+    from telegram.error import TelegramError
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"🔐 <b>รหัส OTP กระเป๋าเครดิต</b>\n\n"
+                f"สวัสดีคุณ @{username}!\n\n"
+                f"รหัสยืนยันตัวตนของคุณคือ:\n\n"
+                f"<code>{otp_code}</code>\n\n"
+                f"⏰ ใช้ได้ภายใน 10 นาที\n"
+                f"⚠️ อย่าบอกรหัสนี้กับใครเด็ดขาด"
+            ),
+            parse_mode="HTML",
+        )
+        return True
+    except TelegramError as e:
+        logger.error(f"Failed to send wallet OTP to chat {chat_id}: {e}")
+        return False
+
+
 async def setup_webhook(webhook_url: str) -> bool:
     if not settings.bot_token:
         logger.warning("BOT_TOKEN not set — skipping webhook setup")

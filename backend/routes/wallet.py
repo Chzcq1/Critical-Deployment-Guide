@@ -74,6 +74,116 @@ def _normalize_username(raw: str) -> str:
     return u
 
 
+# ── Public: request OTP (new account only) ───────────────────────────────────
+
+@router.post("/wallet/send-otp")
+def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
+    """Create an OTP session for a new wallet registration. Returns bot deep-link."""
+    import secrets as _secrets
+    from datetime import datetime, timedelta, timezone
+    from backend.models import WalletOTPSession
+
+    username = _normalize_username(body.get("username", ""))
+    settings = get_settings()
+
+    if not settings.bot_token or not settings.bot_username:
+        raise HTTPException(
+            status_code=503,
+            detail="ระบบ OTP ยังไม่ได้ตั้งค่า BOT_TOKEN / BOT_USERNAME — กรุณาติดต่อแอดมิน"
+        )
+
+    customer = db.query(Customer).filter(Customer.telegram_username == username).first()
+    if customer and customer.pin_hash:
+        raise HTTPException(status_code=400, detail="บัญชีนี้มี PIN อยู่แล้ว ไม่จำเป็นต้อง OTP")
+
+    db.query(WalletOTPSession).filter(
+        WalletOTPSession.telegram_username == username,
+        WalletOTPSession.is_used == False,
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    token = _secrets.token_hex(32)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+    session = WalletOTPSession(
+        session_token=token,
+        telegram_username=username,
+        expires_at=expires,
+    )
+    db.add(session)
+    db.commit()
+
+    bot_url = f"https://t.me/{settings.bot_username}?start=otp_{token}"
+    return {"session_token": token, "bot_url": bot_url}
+
+
+@router.get("/wallet/otp-status/{session_token}")
+def wallet_otp_status(session_token: str, db: Session = Depends(get_db)):
+    """Poll whether the bot has already sent the OTP (user opened Telegram)."""
+    from datetime import datetime, timezone
+    from backend.models import WalletOTPSession
+
+    session = db.query(WalletOTPSession).filter(
+        WalletOTPSession.session_token == session_token,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="ไม่พบ session")
+
+    expires = session.expires_at
+    if expires.tzinfo is None:
+        from datetime import timezone as _tz
+        expires = expires.replace(tzinfo=_tz.utc)
+    if datetime.now(timezone.utc) > expires:
+        raise HTTPException(status_code=410, detail="session หมดอายุ กรุณาขอ OTP ใหม่")
+
+    return {"ready": session.otp_code is not None and not session.is_used}
+
+
+@router.post("/wallet/verify-otp")
+def wallet_verify_otp(body: dict, db: Session = Depends(get_db)):
+    """Verify OTP entered by user. Returns a short-lived verified_token for account creation."""
+    from datetime import datetime, timezone, timedelta
+    from backend.models import WalletOTPSession
+
+    session_token = str(body.get("session_token", "")).strip()
+    otp = str(body.get("otp", "")).strip()
+
+    if not session_token or not otp:
+        raise HTTPException(status_code=400, detail="ข้อมูลไม่ครบ")
+
+    session = db.query(WalletOTPSession).filter(
+        WalletOTPSession.session_token == session_token,
+        WalletOTPSession.is_used == False,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="ไม่พบ session หรือถูกใช้ไปแล้ว")
+
+    expires = session.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires:
+        raise HTTPException(status_code=410, detail="รหัส OTP หมดอายุแล้ว กรุณาขอใหม่")
+
+    if session.otp_code is None:
+        raise HTTPException(status_code=400, detail="รหัส OTP ยังไม่ถูกส่ง กรุณาเปิด Telegram ก่อน")
+
+    if session.otp_code != otp:
+        raise HTTPException(status_code=400, detail="รหัส OTP ไม่ถูกต้อง")
+
+    session.is_used = True
+    db.commit()
+
+    verified_token = _jwt.encode(
+        {
+            "sub": session.telegram_username,
+            "type": "wallet_otp_verified",
+            "exp": datetime.utcnow() + timedelta(minutes=15),
+        },
+        _JWT_SECRET,
+        algorithm=_JWT_ALG,
+    )
+    return {"verified": True, "verified_token": verified_token, "username": session.telegram_username}
+
+
 # ── Public: check if account exists ──────────────────────────────────────────
 
 @router.get("/wallet/check/{username}")
@@ -107,7 +217,22 @@ def wallet_auth(body: dict, db: Session = Depends(get_db)):
     customer = db.query(Customer).filter(Customer.telegram_username == username).first()
 
     if not customer:
-        # Brand new account — require confirm_pin
+        # Brand new account — require OTP verified_token
+        verified_token = str(body.get("verified_token", "")).strip()
+        if not verified_token:
+            raise HTTPException(
+                status_code=403,
+                detail="บัญชีใหม่ต้องยืนยันตัวตนผ่าน Telegram OTP ก่อน"
+            )
+        try:
+            payload = _jwt.decode(verified_token, _JWT_SECRET, algorithms=[_JWT_ALG])
+            if payload.get("type") != "wallet_otp_verified" or payload.get("sub") != username:
+                raise ValueError("token mismatch")
+        except Exception:
+            raise HTTPException(
+                status_code=403,
+                detail="OTP token ไม่ถูกต้องหรือหมดอายุ กรุณายืนยัน OTP ใหม่อีกครั้ง"
+            )
         if confirm_pin and pin != confirm_pin:
             raise HTTPException(status_code=400, detail="PIN ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง")
         customer = Customer(
