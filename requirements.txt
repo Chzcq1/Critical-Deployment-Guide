@@ -52,3 +52,5 @@ python-multipart
 python-telegram-bot
 sqlalchemy
 uvicorn[standard]
+bcrypt
+python-jose[cryptography]
