@@ -163,6 +163,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
   const [verifiedToken, setVerifiedToken] = useState("");
   const [otpBotUrl, setOtpBotUrl] = useState<string | null>(null);
   const [otpBotUsername, setOtpBotUsername] = useState<string | null>(null);
+  const [botInfoLoaded, setBotInfoLoaded] = useState(false);
   const [otpInput, setOtpInput] = useState("");
   const [isForgotPin, setIsForgotPin] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -171,7 +172,8 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     fetch("/api/wallet/bot-info")
       .then(r => r.json())
       .then(d => { setOtpBotUrl(d.bot_url); setOtpBotUsername(d.otp_bot_username); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setBotInfoLoaded(true));
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, []);
 
@@ -384,9 +386,13 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
                           <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
                           เปิด {otpBotUsername ? `@${otpBotUsername}` : "Telegram Bot"}
                         </a>
+                      ) : botInfoLoaded ? (
+                        <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg py-2 px-3 text-center">
+                          ⚠️ ยังไม่ได้ตั้งค่าบอท — กรุณาเปิด Telegram แล้วค้นหาบอทของคุณโดยตรง
+                        </div>
                       ) : (
-                        <div className="text-xs text-muted-foreground bg-muted rounded-lg py-2 px-3 text-center">
-                          ระบบกำลังโหลดลิงก์บอท...
+                        <div className="text-xs text-muted-foreground bg-muted rounded-lg py-2 px-3 text-center animate-pulse">
+                          กำลังโหลด...
                         </div>
                       )}
                     </div>
