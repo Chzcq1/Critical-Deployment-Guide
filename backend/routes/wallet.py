@@ -446,6 +446,22 @@ async def purchase_with_credits(
     ))
 
     product.sales_count = (product.sales_count or 0) + 1
+
+    # สร้าง FinanceEntry เพื่อให้ยอดในหน้าการเงินเพิ่มขึ้น
+    from backend.models import FinanceEntry
+    from backend.routes.admin import _get_setting
+    admin_names_str = _get_setting(db, "finance_admin_names")
+    admin_names = [n.strip() for n in admin_names_str.split(",") if n.strip()] if admin_names_str else ["แอดมิน"]
+    per_admin = price / len(admin_names)
+    for aname in admin_names:
+        db.add(FinanceEntry(
+            amount=per_admin,
+            description=f"ออเดอร์ #{order.id} — {product.name} (เครดิต)",
+            admin_name=aname,
+            entry_type="order",
+            order_id=order.id,
+        ))
+
     db.commit()
 
     try:
