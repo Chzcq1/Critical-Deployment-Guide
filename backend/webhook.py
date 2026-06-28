@@ -199,20 +199,106 @@ async def telegram_otp_webhook(request: Request):
 
     if update.message and update.message.text:
         text = update.message.text.strip()
+        chat_id = update.message.chat.id
+
         if text.startswith("/start"):
             payload = text[len("/start"):].strip()
             if payload.startswith("otp_"):
+                # Deep link flow (normal path)
                 token = payload[len("otp_"):]
-                chat_id = update.message.chat.id
                 await _handle_wallet_otp_start(token, chat_id)
             else:
-                chat_id = update.message.chat.id
+                # Deep link failed (iOS issue) — ask user to type username instead
                 try:
                     await otp_bot.send_message(
                         chat_id=chat_id,
-                        text="🔐 บอทนี้ใช้สำหรับยืนยันตัวตนกระเป๋าเครดิตเท่านั้น\n\nกรุณากลับไปที่หน้าเว็บร้านค้าและกดปุ่มรับ OTP ครับ"
+                        text=(
+                            "🔐 <b>ยืนยันตัวตนกระเป๋าเครดิต</b>\n\n"
+                            "กรุณาพิมพ์ Telegram Username ของคุณเพื่อรับ OTP:\n\n"
+                            "<code>/otp ชื่อuser</code>\n\n"
+                            "ตัวอย่าง: <code>/otp myusername</code>\n\n"
+                            "💡 ไม่ต้องมี @ นำหน้า"
+                        ),
+                        parse_mode="HTML"
                     )
                 except Exception:
                     pass
 
+        elif text.startswith("/otp"):
+            # Manual OTP fallback — user types /otp username
+            raw = text[len("/otp"):].strip().lstrip("@").lower()
+            if not raw:
+                try:
+                    await otp_bot.send_message(
+                        chat_id=chat_id,
+                        text="❌ กรุณาระบุ Username\n\nตัวอย่าง: <code>/otp myusername</code>",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+            else:
+                await _handle_wallet_otp_by_username(raw, chat_id, otp_bot)
+
     return {"ok": True}
+
+
+async def _handle_wallet_otp_by_username(username: str, chat_id: int, otp_bot):
+    """Fallback: user types /otp username → find pending session → send OTP."""
+    import secrets as _secrets
+    from datetime import datetime, timezone
+    from backend.database import SessionLocal
+    from backend.models import WalletOTPSession
+
+    db = SessionLocal()
+    try:
+        # Find the most recent unused, unexpired session for this username
+        session = (
+            db.query(WalletOTPSession)
+            .filter(
+                WalletOTPSession.telegram_username == username,
+                WalletOTPSession.is_used == False,
+            )
+            .order_by(WalletOTPSession.created_at.desc())
+            .first()
+        )
+
+        if not session:
+            await otp_bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "❌ ไม่พบคำขอ OTP สำหรับ <b>@{}</b>\n\n"
+                    "กรุณากลับไปที่หน้าเว็บและกด <b>ต่อไป</b> ก่อนครับ"
+                ).format(username),
+                parse_mode="HTML"
+            )
+            return
+
+        expires = session.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            await otp_bot.send_message(
+                chat_id=chat_id,
+                text="⏰ คำขอ OTP หมดอายุแล้ว\n\nกรุณากลับไปที่หน้าเว็บและขอ OTP ใหม่ครับ"
+            )
+            return
+
+        # Generate OTP and store chat_id
+        otp = str(_secrets.randbelow(900000) + 100000)
+        session.otp_code = otp
+        session.telegram_chat_id = chat_id
+        db.commit()
+
+        await bot_module.send_wallet_otp(chat_id, otp, username)
+
+    except Exception as e:
+        logger.error(f"Error in _handle_wallet_otp_by_username: {e}")
+        try:
+            await otp_bot.send_message(
+                chat_id=chat_id,
+                text="❌ เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้งครับ"
+            )
+        except Exception:
+            pass
+    finally:
+        db.close()
