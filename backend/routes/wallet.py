@@ -458,6 +458,34 @@ async def purchase_with_credits(
     }
 
 
+# ── My orders (purchases) ─────────────────────────────────────────────────────
+
+@router.get("/wallet/my-orders")
+def get_my_orders(
+    customer: Customer = Depends(get_wallet_customer),
+    db: Session = Depends(get_db),
+):
+    from backend.models import Order
+    orders = (
+        db.query(Order)
+        .filter(Order.telegram_username == customer.telegram_username)
+        .order_by(desc(Order.id))
+        .limit(50)
+        .all()
+    )
+    return [
+        {
+            "id": o.id,
+            "product_name": o.product_name,
+            "status": o.status,
+            "payment_type": o.payment_type,
+            "invite_links": json.loads(o.invite_links) if o.invite_links else [],
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+        }
+        for o in orders
+    ]
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _extract_voucher_code(raw: str) -> str:
