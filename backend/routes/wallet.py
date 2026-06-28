@@ -8,7 +8,8 @@ from decimal import Decimal
 import bcrypt
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from jose import JWTError, jwt
+import jwt as _jwt
+from jwt.exceptions import InvalidTokenError as JWTError
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -41,12 +42,12 @@ def _verify_pin(pin: str, hashed: str) -> bool:
 
 def _create_token(username: str) -> str:
     exp = datetime.utcnow() + timedelta(days=_TOKEN_EXPIRE_DAYS)
-    return jwt.encode({"sub": username, "exp": exp}, _JWT_SECRET, algorithm=_JWT_ALG)
+    return _jwt.encode({"sub": username, "exp": exp}, _JWT_SECRET, algorithm=_JWT_ALG)
 
 
 def _decode_token(token: str) -> str:
     try:
-        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALG])
+        payload = _jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALG])
         return payload["sub"]
     except JWTError:
         raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบใหม่ (session หมดอายุ)")
