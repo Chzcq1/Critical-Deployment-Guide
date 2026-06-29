@@ -258,26 +258,40 @@ async def telegram_otp_webhook(request: Request):
                             pass
 
         elif text.startswith("/otp"):
-            # Secure OTP fallback — identity comes from Telegram's API, never from a typed argument.
-            # Step 1: try linked telegram_user_id (existing accounts that have already registered).
-            # Step 2: fall back to from_user.username (for new registrations that don't have a
-            #         linked ID yet — username is provided by Telegram, not typed by the user).
-            sender = update.message.from_user if update.message.from_user else None
-            if not sender:
+            # Reject any argument after /otp — the command takes no input.
+            # Identity is always read from Telegram's API (from_user), never from typed text.
+            argument = text[len("/otp"):].strip()
+            if argument:
                 try:
                     await otp_bot.send_message(
                         chat_id=chat_id,
-                        text="❌ ไม่สามารถระบุตัวตนของผู้ส่งได้ กรุณาลองใหม่อีกครั้ง"
+                        text=(
+                            "⚠️ คำสั่งนี้ไม่รับ argument ครับ\n\n"
+                            "กรุณาพิมพ์แค่ <code>/otp</code> เท่านั้น โดยไม่ต้องระบุ username"
+                        ),
+                        parse_mode="HTML",
                     )
                 except Exception:
                     pass
             else:
-                sent = await _try_send_otp_by_telegram_user_id(sender.id, chat_id, otp_bot)
-                if not sent:
-                    # No linked account found — try pending session by Telegram username
-                    tg_username = (sender.username or "").lower()
-                    if tg_username:
-                        sent = await _try_send_otp_by_username(tg_username, chat_id, otp_bot)
+                # Secure: identity from Telegram's API only — never from typed text.
+                # Step 1: try linked telegram_user_id (existing registered accounts).
+                # Step 2: fall back to from_user.username (new registrations without linked ID yet).
+                sender = update.message.from_user if update.message.from_user else None
+                if not sender:
+                    try:
+                        await otp_bot.send_message(
+                            chat_id=chat_id,
+                            text="❌ ไม่สามารถระบุตัวตนของผู้ส่งได้ กรุณาลองใหม่อีกครั้ง"
+                        )
+                    except Exception:
+                        pass
+                else:
+                    sent = await _try_send_otp_by_telegram_user_id(sender.id, chat_id, otp_bot)
+                    if not sent:
+                        tg_username = (sender.username or "").lower()
+                        if tg_username:
+                            sent = await _try_send_otp_by_username(tg_username, chat_id, otp_bot)
                     if not sent:
                         try:
                             await otp_bot.send_message(
