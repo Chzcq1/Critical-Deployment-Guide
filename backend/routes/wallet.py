@@ -78,11 +78,15 @@ def _normalize_username(raw: str) -> str:
 # ── Public: request OTP (new account only) ───────────────────────────────────
 
 @router.post("/wallet/send-otp")
-def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
+async def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
     """
     Create an OTP session. Returns bot deep-link.
     mode='register' (default) — new accounts only.
     mode='reset'    — existing accounts with PIN (forgot PIN flow).
+
+    If the customer already has a telegram_user_id linked, the OTP is sent
+    automatically via Telegram DM and auto_sent=True is returned so the
+    frontend can skip the otp_wait step entirely.
     """
     import secrets as _secrets
     from datetime import datetime, timedelta, timezone
@@ -127,7 +131,26 @@ def wallet_send_otp(body: dict, db: Session = Depends(get_db)):
     db.commit()
 
     bot_url = f"https://t.me/{otp_username}?start=otp_{token}"
-    return {"session_token": token, "bot_url": bot_url}
+
+    # Auto-send OTP for accounts that already have a linked Telegram User ID
+    auto_sent = False
+    if customer and customer.telegram_user_id:
+        otp_code = str(_secrets.randbelow(900000) + 100000)
+        session.otp_code = otp_code
+        session.telegram_chat_id = customer.telegram_user_id
+        db.commit()
+        try:
+            from backend import bot as bot_module
+            await bot_module.send_wallet_otp(customer.telegram_user_id, otp_code, username)
+            auto_sent = True
+            logger.info(f"Auto-sent OTP for {username} (telegram_user_id={customer.telegram_user_id})")
+        except Exception as e:
+            logger.warning(f"Auto-send OTP failed for {username}: {e} — falling back to deep link")
+            session.otp_code = None
+            session.telegram_chat_id = None
+            db.commit()
+
+    return {"session_token": token, "bot_url": bot_url, "auto_sent": auto_sent}
 
 
 @router.get("/wallet/otp-status/{session_token}")

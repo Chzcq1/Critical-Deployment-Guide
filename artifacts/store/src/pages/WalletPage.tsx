@@ -170,6 +170,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
   const [isForgotPin, setIsForgotPin] = useState(false);
   const [otpSendCount, setOtpSendCount] = useState(0);
   const [otpCooldown, setOtpCooldown] = useState(0);
+  const [autoSent, setAutoSent] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -224,7 +225,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     if (cooldownRef.current) clearInterval(cooldownRef.current);
     setStep("username"); setPin(""); setOtpInput(""); setError("");
     setSessionToken(""); setBotUrl(""); setVerifiedToken("");
-    setIsForgotPin(false); setOtpSendCount(0); setOtpCooldown(0);
+    setIsForgotPin(false); setOtpSendCount(0); setOtpCooldown(0); setAutoSent(false);
   };
 
   const sendOtp = async (u: string, mode = "register") => {
@@ -238,7 +239,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
     const otpData = await otpRes.json();
     if (!otpRes.ok) throw new Error(otpData.detail || "เกิดข้อผิดพลาด");
     if (newCount >= OTP_MAX_FREE) startCooldown();
-    return otpData;
+    return otpData as { session_token: string; bot_url: string; auto_sent: boolean };
   };
 
   const startForgotPin = async () => {
@@ -249,7 +250,13 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
       setSessionToken(otpData.session_token);
       setBotUrl(otpData.bot_url);
       setPin(""); setConfirmPin(""); setOtpInput("");
-      setStep("otp_wait");
+      if (otpData.auto_sent) {
+        setAutoSent(true);
+        setStep("otp_entry");
+      } else {
+        setAutoSent(false);
+        setStep("otp_wait");
+      }
     } catch (e: any) {
       setError(e.message);
       setIsForgotPin(false);
@@ -266,6 +273,12 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
       const otpData = await sendOtp(username, mode);
       setSessionToken(otpData.session_token);
       setBotUrl(otpData.bot_url);
+      if (otpData.auto_sent) {
+        setAutoSent(true);
+        setStep("otp_entry");
+      } else {
+        setAutoSent(false);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -287,7 +300,13 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
         const otpData = await sendOtp(u);
         setSessionToken(otpData.session_token);
         setBotUrl(otpData.bot_url);
-        setStep("otp_wait");
+        if (otpData.auto_sent) {
+          setAutoSent(true);
+          setStep("otp_entry");
+        } else {
+          setAutoSent(false);
+          setStep("otp_wait");
+        }
       }
     } catch (e: any) {
       setError(e.message);
@@ -504,7 +523,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
                     พิมพ์คำสั่งนี้ใน Telegram บอท:
                   </p>
                   <div className="bg-background/60 rounded-lg px-2 py-1.5 text-center">
-                    <code className="text-xs text-primary font-mono select-all">/otp {username}</code>
+                    <code className="text-xs text-primary font-mono select-all">/otp</code>
                   </div>
                 </div>
 
@@ -539,7 +558,11 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string, username: str
               <>
                 <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 text-center">
                   <CheckCircle size={20} className="text-green-400 mx-auto mb-1" />
-                  <p className="text-xs text-green-400 font-medium">บอทส่ง OTP มาแล้ว! ตรวจสอบใน Telegram DM</p>
+                  {autoSent ? (
+                    <p className="text-xs text-green-400 font-medium">ส่ง OTP ไปยัง Telegram ของคุณอัตโนมัติแล้ว ✅</p>
+                  ) : (
+                    <p className="text-xs text-green-400 font-medium">บอทส่ง OTP มาแล้ว! ตรวจสอบใน Telegram DM</p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground block mb-1.5">รหัส OTP (6 หลัก)</label>
