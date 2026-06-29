@@ -258,9 +258,12 @@ async def telegram_otp_webhook(request: Request):
                             pass
 
         elif text.startswith("/otp"):
-            # Secure OTP fallback — identify caller by their Telegram User ID, not a typed username
-            sender_tg_id = update.message.from_user.id if update.message.from_user else None
-            if not sender_tg_id:
+            # Secure OTP fallback — identity comes from Telegram's API, never from a typed argument.
+            # Step 1: try linked telegram_user_id (existing accounts that have already registered).
+            # Step 2: fall back to from_user.username (for new registrations that don't have a
+            #         linked ID yet — username is provided by Telegram, not typed by the user).
+            sender = update.message.from_user if update.message.from_user else None
+            if not sender:
                 try:
                     await otp_bot.send_message(
                         chat_id=chat_id,
@@ -269,18 +272,25 @@ async def telegram_otp_webhook(request: Request):
                 except Exception:
                     pass
             else:
-                sent = await _try_send_otp_by_telegram_user_id(sender_tg_id, chat_id, otp_bot)
+                sent = await _try_send_otp_by_telegram_user_id(sender.id, chat_id, otp_bot)
                 if not sent:
-                    try:
-                        await otp_bot.send_message(
-                            chat_id=chat_id,
-                            text=(
-                                "❌ This Telegram account is not linked to any user profile.\n\n"
-                                "กรุณาสมัครสมาชิกที่หน้าเว็บร้านค้าก่อนครับ"
-                            ),
-                        )
-                    except Exception:
-                        pass
+                    # No linked account found — try pending session by Telegram username
+                    tg_username = (sender.username or "").lower()
+                    if tg_username:
+                        sent = await _try_send_otp_by_username(tg_username, chat_id, otp_bot)
+                    if not sent:
+                        try:
+                            await otp_bot.send_message(
+                                chat_id=chat_id,
+                                text=(
+                                    "❌ ไม่พบคำขอ OTP ที่รอดำเนินการ\n\n"
+                                    "กรุณากลับไปที่หน้าเว็บร้านค้าและกดปุ่ม <b>ต่อไป</b> ก่อน\n"
+                                    "จากนั้นกลับมาที่นี่และพิมพ์ <code>/otp</code> ใหม่อีกครั้งครับ"
+                                ),
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
 
     return {"ok": True}
 
