@@ -229,50 +229,55 @@ async def telegram_otp_webhook(request: Request):
                         except Exception:
                             pass
                 else:
-                    # No Telegram username → ask them to type /otp username
-                    try:
-                        await otp_bot.send_message(
-                            chat_id=chat_id,
-                            text=(
-                                "🔐 <b>ยืนยันตัวตนกระเป๋าเครดิต</b>\n\n"
-                                "กรุณาพิมพ์คำสั่งนี้เพื่อรับ OTP:\n\n"
-                                "<code>/otp ชื่อuser</code>\n\n"
-                                "ตัวอย่าง: <code>/otp myusername</code>\n"
-                                "💡 ไม่ต้องมี @ นำหน้า"
-                            ),
-                            parse_mode="HTML"
-                        )
-                    except Exception:
-                        pass
+                    # No Telegram username — try matching by Telegram User ID instead
+                    sender_tg_id = update.message.from_user.id if update.message.from_user else None
+                    if sender_tg_id:
+                        sent_by_id = await _try_send_otp_by_telegram_user_id(sender_tg_id, chat_id, otp_bot)
+                        if not sent_by_id:
+                            try:
+                                await otp_bot.send_message(
+                                    chat_id=chat_id,
+                                    text=(
+                                        "❌ This Telegram account is not linked to any user profile.\n\n"
+                                        "กรุณาสมัครสมาชิกที่หน้าเว็บร้านค้าก่อนครับ"
+                                    ),
+                                )
+                            except Exception:
+                                pass
+                    else:
+                        try:
+                            await otp_bot.send_message(
+                                chat_id=chat_id,
+                                text=(
+                                    "🔐 <b>ยืนยันตัวตนกระเป๋าเครดิต</b>\n\n"
+                                    "กรุณากลับไปที่หน้าเว็บร้านค้าและกดปุ่ม <b>ต่อไป</b> ก่อนครับ"
+                                ),
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
 
         elif text.startswith("/otp"):
-            # Manual OTP fallback — user types /otp username
-            raw = text[len("/otp"):].strip().lstrip("@").lower()
-            if not raw:
-                # No username given — try their own Telegram username
-                tg_username = (update.message.from_user.username or "").lower() if update.message.from_user else ""
-                if tg_username:
-                    raw = tg_username
-                else:
-                    try:
-                        await otp_bot.send_message(
-                            chat_id=chat_id,
-                            text="❌ กรุณาระบุ Username\n\nตัวอย่าง: <code>/otp myusername</code>",
-                            parse_mode="HTML"
-                        )
-                    except Exception:
-                        pass
-            if raw:
-                sent = await _try_send_otp_by_username(raw, chat_id, otp_bot)
+            # Secure OTP fallback — identify caller by their Telegram User ID, not a typed username
+            sender_tg_id = update.message.from_user.id if update.message.from_user else None
+            if not sender_tg_id:
+                try:
+                    await otp_bot.send_message(
+                        chat_id=chat_id,
+                        text="❌ ไม่สามารถระบุตัวตนของผู้ส่งได้ กรุณาลองใหม่อีกครั้ง"
+                    )
+                except Exception:
+                    pass
+            else:
+                sent = await _try_send_otp_by_telegram_user_id(sender_tg_id, chat_id, otp_bot)
                 if not sent:
                     try:
                         await otp_bot.send_message(
                             chat_id=chat_id,
                             text=(
-                                "❌ ไม่พบคำขอ OTP สำหรับ <b>@{}</b>\n\n"
-                                "กรุณากลับไปที่หน้าเว็บและกดปุ่ม <b>ต่อไป</b> ก่อนครับ"
-                            ).format(raw),
-                            parse_mode="HTML"
+                                "❌ This Telegram account is not linked to any user profile.\n\n"
+                                "กรุณาสมัครสมาชิกที่หน้าเว็บร้านค้าก่อนครับ"
+                            ),
                         )
                     except Exception:
                         pass
@@ -316,6 +321,51 @@ async def _try_send_otp_by_username(username: str, chat_id: int, otp_bot) -> boo
         return True
     except Exception as e:
         logger.error(f"Error in _try_send_otp_by_username: {e}")
+        return False
+    finally:
+        db.close()
+
+
+async def _try_send_otp_by_telegram_user_id(telegram_user_id: int, chat_id: int, otp_bot) -> bool:
+    """Find a customer bound to this Telegram User ID, then find their pending OTP session and send it."""
+    import secrets as _secrets
+    from datetime import datetime, timezone
+    from backend.database import SessionLocal
+    from backend.models import Customer, WalletOTPSession
+
+    db = SessionLocal()
+    try:
+        customer = db.query(Customer).filter(Customer.telegram_user_id == telegram_user_id).first()
+        if not customer:
+            return False
+
+        session = (
+            db.query(WalletOTPSession)
+            .filter(
+                WalletOTPSession.telegram_username == customer.telegram_username,
+                WalletOTPSession.is_used == False,
+            )
+            .order_by(WalletOTPSession.created_at.desc())
+            .first()
+        )
+        if not session:
+            return False
+
+        expires = session.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            return False
+
+        otp = str(_secrets.randbelow(900000) + 100000)
+        session.otp_code = otp
+        session.telegram_chat_id = chat_id
+        db.commit()
+
+        await bot_module.send_wallet_otp(chat_id, otp, customer.telegram_username)
+        return True
+    except Exception as e:
+        logger.error(f"Error in _try_send_otp_by_telegram_user_id: {e}")
         return False
     finally:
         db.close()

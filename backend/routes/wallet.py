@@ -191,6 +191,7 @@ def wallet_verify_otp(body: dict, db: Session = Depends(get_db)):
             "sub": session.telegram_username,
             "type": "wallet_otp_verified",
             "exp": datetime.utcnow() + timedelta(minutes=15),
+            "tuid": session.telegram_chat_id,
         },
         _JWT_SECRET,
         algorithm=_JWT_ALG,
@@ -284,8 +285,17 @@ def wallet_auth(body: dict, db: Session = Depends(get_db)):
             )
         if confirm_pin and pin != confirm_pin:
             raise HTTPException(status_code=400, detail="PIN ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง")
+        tuid = payload.get("tuid")
+        if tuid is not None:
+            existing_by_id = db.query(Customer).filter(Customer.telegram_user_id == int(tuid)).first()
+            if existing_by_id and existing_by_id.telegram_username != username:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Telegram account นี้ถูกผูกกับบัญชีอื่นแล้ว"
+                )
         customer = Customer(
             telegram_username=username,
+            telegram_user_id=int(tuid) if tuid is not None else None,
             balance=Decimal("0.00"),
             pin_hash=_hash_pin(pin),
         )

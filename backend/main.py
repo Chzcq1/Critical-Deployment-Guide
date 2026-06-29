@@ -70,6 +70,9 @@ def _run_migrations(engine):
         "CREATE TABLE IF NOT EXISTS wallet_otp_sessions (id SERIAL PRIMARY KEY, session_token VARCHAR(64) UNIQUE NOT NULL, telegram_username VARCHAR(255) NOT NULL, otp_code VARCHAR(6), telegram_chat_id BIGINT, is_used BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), expires_at TIMESTAMPTZ NOT NULL)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_otp_sessions_session_token ON wallet_otp_sessions (session_token)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_otp_sessions_telegram_username ON wallet_otp_sessions (telegram_username)",
+        # telegram_user_id for 1-to-1 binding of customer accounts to Telegram User IDs
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS telegram_user_id BIGINT",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_customers_telegram_user_id ON customers (telegram_user_id) WHERE telegram_user_id IS NOT NULL",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:
